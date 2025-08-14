@@ -122,58 +122,94 @@ class PersistentGameManager:
     def process_selection_input(self, game: Game, player_idx: int, selection_input: str) -> tuple[bool, str]:
         """Process team selection input."""
         try:
+            # Get prompt before processing
+            prompt = game.prompt_for_selection(player_idx)
+            
             # Parse selection format like "[0, 3, 7, 11]"
             selection_indices = eval(selection_input.strip())
             if not isinstance(selection_indices, list) or len(selection_indices) != 4:
+                # Track invalid response
+                game.add_history_entry(player_idx, prompt, selection_input, "invalid response")
                 return False, "Must select exactly 4 fish as a list"
             
             player = game.state.players[player_idx]
             fish_names = []
             for idx in selection_indices:
                 if not isinstance(idx, int) or idx < 0 or idx >= len(player.roster):
+                    # Track invalid argument
+                    game.add_history_entry(player_idx, prompt, selection_input, "invalid argument")
                     return False, f"Invalid fish index: {idx}"
                 fish_names.append(player.roster[idx])
             
             # Check for Mimic Fish
             mimic_choice = None
             if "Mimic Fish" in fish_names:
+                # Track invalid response (missing mimic choice)
+                game.add_history_entry(player_idx, prompt, selection_input, "invalid response")
                 return False, "Please specify mimic choice separately using --mimic-choice flag"
             
             game.select_team(player_idx, fish_names, mimic_choice)
+            
+            # Track valid response in history
+            game.add_history_entry(player_idx, prompt, selection_input, "valid")
+            
             return True, f"Team selected for {player.name}: {fish_names}"
             
         except Exception as e:
+            # Track invalid response for parsing errors
+            prompt = game.prompt_for_selection(player_idx)
+            game.add_history_entry(player_idx, prompt, selection_input, "invalid response")
             return False, f"Error parsing selection: {e}"
     
     def process_assertion_input(self, game: Game, assertion_input: str) -> tuple[bool, str]:
         """Process assertion phase input."""
         current_player = game.state.turn_player
         
+        # Get prompt before processing
+        prompt = game.prompt_for_assertion(current_player)
+        
         if assertion_input.upper().strip() == "SKIP":
             result = game.skip_assertion(current_player)
+            # Track valid response in history
+            game.add_history_entry(current_player, prompt, assertion_input, "valid")
             return True, result
         
         try:
             parts = assertion_input.strip().split()
             if len(parts) < 3 or parts[0].upper() != "ASSERT":
+                # Track invalid response
+                game.add_history_entry(current_player, prompt, assertion_input, "invalid response")
                 return False, "Format: ASSERT <enemy_index> <Fish Name> or SKIP"
             
             enemy_index = int(parts[1])
             fish_name = " ".join(parts[2:])
             
             result = game.perform_assertion(current_player, enemy_index, fish_name)
+            # Track valid response in history
+            game.add_history_entry(current_player, prompt, assertion_input, "valid")
             return True, result
             
+        except ValueError as e:
+            # Track invalid argument (likely bad enemy_index)
+            game.add_history_entry(current_player, prompt, assertion_input, "invalid argument")
+            return False, f"Error processing assertion: {e}"
         except Exception as e:
+            # Track invalid action (game logic error)
+            game.add_history_entry(current_player, prompt, assertion_input, "invalid action")
             return False, f"Error processing assertion: {e}"
     
     def process_action_input(self, game: Game, action_input: str) -> tuple[bool, str]:
         """Process action phase input."""
         current_player = game.state.turn_player
         
+        # Get prompt before processing
+        prompt = game.prompt_for_action(current_player)
+        
         try:
             parts = action_input.strip().split()
             if len(parts) < 3 or parts[0].upper() != "ACT":
+                # Track invalid response
+                game.add_history_entry(current_player, prompt, action_input, "invalid response")
                 return False, "Format: ACT <fish_index> NORMAL <target> or ACT <fish_index> ACTIVE [target]"
             
             fish_index = int(parts[1])
@@ -181,9 +217,17 @@ class PersistentGameManager:
             target_index = int(parts[3]) if len(parts) > 3 else None
             
             result = game.perform_action(current_player, fish_index, action, target_index)
+            # Track valid response in history
+            game.add_history_entry(current_player, prompt, action_input, "valid")
             return True, result
             
+        except ValueError as e:
+            # Track invalid argument (likely bad fish_index or target_index)
+            game.add_history_entry(current_player, prompt, action_input, "invalid argument")
+            return False, f"Error processing action: {e}"
         except Exception as e:
+            # Track invalid action (game logic error)
+            game.add_history_entry(current_player, prompt, action_input, "invalid action")
             return False, f"Error processing action: {e}"
 
 
@@ -288,14 +332,23 @@ def main():
                 player = game.state.players[player_idx]
                 actual_names = [player.roster[i] for i in fish_names]
                 
+                # Get prompt for history tracking
+                prompt = game.prompt_for_selection(player_idx)
+                full_response = selection_input
+                
                 mimic_choice = None
                 if "Mimic Fish" in actual_names:
                     if not args.mimic_choice:
                         print("Error: Mimic Fish selected but --mimic-choice not specified")
                         sys.exit(1)
                     mimic_choice = args.mimic_choice
+                    full_response += f" --mimic-choice {mimic_choice}"
                 
                 game.select_team(player_idx, actual_names, mimic_choice)
+                
+                # Track in history
+                game.add_history_entry(player_idx, prompt, full_response, "valid")
+                
                 save_path = manager.save_game_state(game, game_id)
                 print(f"Team selected for {player.name}: {actual_names}")
                 if mimic_choice:

@@ -44,6 +44,7 @@ class PlayerState:
     roster: List[str] = field(default_factory=list)  # available fish names
     team: Optional[Team] = None
     score: int = 0
+    damage_dealt: int = 0  # Track total damage dealt throughout the round
 
     def reset_roster(self):
         self.roster = FISH_NAMES.copy()
@@ -86,8 +87,11 @@ class GameState:
 # ---------------------------------------------------------------------------
 
 class Game:
+    history: List[Dict[str, Any]]  # Track turn metadata
+    
     def __init__(self, player_names: Tuple[str, str]):
         self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])])
+        self.history = []  # List[Dict] to track turn metadata
         for p in self.state.players:
             p.reset_roster()
 
@@ -319,6 +323,10 @@ All fish: 400 HP, 100 ATK base
             for f in enemy_team.fish:
                 if f.is_alive():
                     f.take_damage(50, None, direct=False, game=self.state)
+            # Track damage dealt on successful assertion
+            for f in enemy_team.fish:
+                if f.is_alive() and f.hp <= (400-50):  # Fish took damage
+                    self.state.players[player_idx].damage_dealt += 50
             result = f"Assertion success! Enemy {guess} revealed."
             self.state.move_history.append(MoveRecord(player_idx, self.state.turn_count, "assertion", f"Successfully asserted {guess}"))
         else:
@@ -327,6 +335,8 @@ All fish: 400 HP, 100 ATK base
                 for f in own_team.fish:
                     if f.is_alive():
                         f.take_damage(50, None, direct=False, game=self.state)
+                        # Track assertion damage
+                        self.state.players[1-player_idx].damage_dealt += 50
             result = "Assertion failed! Your team loses 50 HP each."
             self.state.move_history.append(MoveRecord(player_idx, self.state.turn_count, "assertion", f"Failed assertion: guessed {guess}"))
         
@@ -399,7 +409,8 @@ All fish: 400 HP, 100 ATK base
         """Save the current game state to a file."""
         save_data = {
             'state': self._serialize_state(),
-            'version': '1.0'
+            'history': getattr(self, 'history', []),  # Default empty if not present
+            'version': '1.1.1'  # Version tracks save format changes for backward compatibility
         }
         
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
@@ -414,6 +425,10 @@ All fish: 400 HP, 100 ATK base
         
         game = cls.__new__(cls)  # Create instance without calling __init__
         game._deserialize_state(save_data['state'])
+        
+        # Handle history field (added in v1.1, default to empty for older saves)
+        game.history = save_data.get('history', [])
+        
         return game
     
     def _serialize_state(self) -> Dict[str, Any]:
@@ -424,7 +439,8 @@ All fish: 400 HP, 100 ATK base
                     'name': p.name,
                     'roster': p.roster.copy(),
                     'team': self._serialize_team(p.team) if p.team else None,
-                    'score': p.score
+                    'score': p.score,
+                    'damage_dealt': p.damage_dealt
                 }
                 for p in self.state.players
             ],
@@ -473,6 +489,7 @@ All fish: 400 HP, 100 ATK base
             player = PlayerState(p_data['name'])
             player.roster = p_data['roster']
             player.score = p_data['score']
+            player.damage_dealt = p_data.get('damage_dealt', 0)  # Default to 0 for backward compatibility
             
             if p_data['team'] is not None:
                 team_fish = []
@@ -518,6 +535,30 @@ All fish: 400 HP, 100 ATK base
             turn_count=state_data['turn_count'],
             phase=state_data.get('phase', 'assertion')  # Default to assertion for backward compatibility
         )
+
+    # ------------------------------------------------------------------
+    # History tracking
+    # ------------------------------------------------------------------
+    def add_history_entry(self, player: int, prompt: str, response: str, validity: str = "valid") -> None:
+        """Add turn metadata to history."""
+        self.history.append({
+            "turn": self.state.turn_count,
+            "player": player + 1,  # Convert to 1-based for readability
+            "prompt": prompt,
+            "response": response,
+            "validity": validity
+        })
+    
+    def track_damage_dealt(self, source_fish: Optional[Fish], damage: int) -> None:
+        """Track damage dealt by a player's fish."""
+        if source_fish is None or damage <= 0:
+            return
+            
+        # Find which player owns the source fish
+        for i, player in enumerate(self.state.players):
+            if player.team and source_fish in player.team.fish:
+                player.damage_dealt += damage
+                break
 
     # ------------------------------------------------------------------
     # Round resolution and tiebreakers
