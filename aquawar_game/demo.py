@@ -13,19 +13,40 @@ from typing import List
 from .game import Game, FISH_NAMES
 
 
-def prompt_select(player: str) -> List[str]:
-    print(f"{player}: choose 4 fish from the roster. Available: {', '.join(FISH_NAMES)}")
-    sel = []
-    while len(sel) < 4:
-        choice = input(f"Select fish #{len(sel)+1}: ")
-        if choice not in FISH_NAMES:
-            print("Unknown fish. Try again.")
-            continue
-        if choice in sel:
-            print("Already chosen.")
-            continue
-        sel.append(choice)
-    return sel
+def prompt_select(game: Game, player_idx: int) -> List[str]:
+    player = game.state.players[player_idx]
+    print(game.prompt_for_selection(player_idx))
+    
+    selection_input = input("Enter your selection (e.g., [0, 3, 7, 11]): ")
+    try:
+        # Parse the list format
+        selection_indices = eval(selection_input)
+        if not isinstance(selection_indices, list) or len(selection_indices) != 4:
+            raise ValueError("Must select exactly 4 fish")
+        
+        # Convert indices to fish names
+        sel = []
+        for idx in selection_indices:
+            if not isinstance(idx, int) or idx < 0 or idx >= len(player.roster):
+                raise ValueError(f"Invalid index: {idx}")
+            sel.append(player.roster[idx])
+        
+        return sel
+    except:
+        print("Invalid selection format. Using old prompt method.")
+        # Fallback to original method
+        print(f"{player.name}: choose 4 fish from the roster. Available: {', '.join(FISH_NAMES)}")
+        sel = []
+        while len(sel) < 4:
+            choice = input(f"Select fish #{len(sel)+1}: ")
+            if choice not in FISH_NAMES:
+                print("Unknown fish. Try again.")
+                continue
+            if choice in sel:
+                print("Already chosen.")
+                continue
+            sel.append(choice)
+        return sel
 
 
 def main() -> None:
@@ -33,10 +54,19 @@ def main() -> None:
     teams = []
     mimic_choices = []
     for i, player in enumerate(game.state.players):
-        sel = prompt_select(player.name)
+        sel = prompt_select(game, i)
         mimic = None
         if "Mimic Fish" in sel:
-            mimic = input("Mimic Fish selected. Which fish to imitate? ")
+            print("Available fish to imitate:")
+            fish_list = [name for name in FISH_NAMES if name != "Mimic Fish"]
+            for idx, fish_name in enumerate(fish_list):
+                print(f"  {idx}: {fish_name}")
+            mimic_idx = input("Which fish to imitate (enter index)? ")
+            try:
+                mimic = fish_list[int(mimic_idx)]
+            except (ValueError, IndexError):
+                print("Invalid index, using Archerfish as default")
+                mimic = "Archerfish"
         game.select_team(i, sel, mimic_choice=mimic)
         teams.append(sel)
         mimic_choices.append(mimic)
@@ -44,7 +74,7 @@ def main() -> None:
     current = 0
     while game.round_over() is None:
         print()
-        print(game.prompt_for_player(current))
+        print(game.prompt_for_assertion(current))
         cmd = input("Command: ")
         if cmd.upper().startswith("ASSERT"):
             _, idx, *guess_parts = cmd.split()
@@ -56,6 +86,8 @@ def main() -> None:
         else:
             print("Invalid command during assertion. Skipping assertion.")
 
+        print()
+        print(game.prompt_for_action(current))
         cmd = input("Action: ")
         parts = cmd.split()
         if len(parts) < 3:
@@ -68,7 +100,10 @@ def main() -> None:
         current = 1 - current
 
     winner = game.round_over()
-    print(f"Round finished! Winner: Player {winner+1}")
+    if winner is not None:
+        print(f"Round finished! Winner: Player {winner + 1}")
+    else:
+        print("Round finished! No winner determined.")
 
 
 if __name__ == "__main__":
