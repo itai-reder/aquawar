@@ -410,7 +410,7 @@ All fish: 400 HP, 100 ATK base
         save_data = {
             'state': self._serialize_state(),
             'history': getattr(self, 'history', []),  # Default empty if not present
-            'version': '1.1.1'  # Version tracks save format changes for backward compatibility
+            'version': '1.2.0'  # Version tracks save format changes for backward compatibility
         }
         
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
