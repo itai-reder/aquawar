@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import List, Optional, Any, Dict, Union
+import time
+from typing import List, Optional, Any, Dict, Union, Tuple
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -748,6 +749,199 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             action = GameAction("action", False, error_msg, "invalid action")
             return action
 
+    # ------------------------------------------------------------------
+    # Enhanced context-capturing methods for global error handling
+    # ------------------------------------------------------------------
+    
+    def _identify_error_location(self, error: Exception, context: Dict[str, Any]) -> str:
+        """Identify where in the turn execution the error occurred."""
+        
+        # LLM invocation errors
+        if not context.get("llm_response"):
+            return "llm_invocation"
+        
+        # Tool extraction errors
+        if not context.get("tool_call"):
+            return "tool_extraction"
+        
+        # Parameter validation errors
+        if not context.get("validated_parameters"):
+            if isinstance(error, (ValueError, TypeError)):
+                return "parameter_validation"
+            return "parameter_processing"
+        
+        # Game logic errors
+        if "perform_action" in str(error) or "perform_assertion" in str(error):
+            return "game_logic"
+        
+        # System errors
+        if isinstance(error, KeyError):
+            return "system_tracking"
+        
+        return "unknown"
+    
+    def make_action_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
+        """Make action decision with full context capture for documentation."""
+        context: Dict[str, Any] = {
+            "prompts": None,
+            "llm_response": None,
+            "tool_call": None,
+            "parameters": None,
+            "validated_parameters": None,
+            "action_type": None
+        }
+        
+        try:
+            if not self.game or self.player_index is None:
+                raise ValueError("No game context set for action")
+            
+            # Increment game turn for any action attempt (valid or invalid)
+            self.game.increment_game_turn()
+            
+            # Capture prompts
+            prompt = self.game.prompt_for_action(self.player_index)
+            messages = [
+                ("system", self.get_system_message()),
+                ("user", f"{prompt}\n\nMake your action using either normal_attack_tool or active_skill_tool.")
+            ]
+            context["prompts"] = messages
+            
+            # Capture LLM response
+            response = self.llm.invoke(messages)
+            context["llm_response"] = json.loads(response.model_dump_json())
+            
+            # Capture tool call
+            tool_call = self._extract_tool_call(response)
+            context["tool_call"] = tool_call
+            
+            if not tool_call:
+                raise ValueError("No tool call made")
+            
+            # Capture parameters
+            tool_name = tool_call['name']
+            args = tool_call['args']
+            context["parameters"] = {"tool_name": tool_name, "args": args}
+            
+            # Business logic with parameter validation and action execution
+            if tool_name == 'normal_attack_tool' or tool_name == 'normal_attack_tool_gpt_oss':
+                fish_index = args.get('fish_index')
+                target_index = args.get('target_index')
+                
+                if fish_index is None or target_index is None:
+                    raise ValueError("Missing attack parameters")
+                
+                # Convert string arguments to integers
+                fish_index = int(fish_index)
+                target_index = int(target_index)
+                
+                context["action_type"] = "normal_attack"
+                context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                
+                result = self.game.perform_action(self.player_index, fish_index, "NORMAL", target_index)
+                return result, context
+                
+            elif tool_name == 'active_skill_tool' or tool_name == 'active_skill_tool_gpt_oss':
+                fish_index = args.get('fish_index')
+                target_index = args.get('target_index')
+                
+                if fish_index is None:
+                    raise ValueError("Missing fish index for active skill")
+                
+                # Convert string arguments to integers (handle None/empty target_index)
+                fish_index = int(fish_index)
+                if target_index is not None and target_index != "" and target_index != "None":
+                    target_index = int(target_index)
+                else:
+                    target_index = None
+                
+                context["action_type"] = "active_skill"
+                context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                
+                result = self.game.perform_action(self.player_index, fish_index, "ACTIVE", target_index)
+                return result, context
+                
+            else:
+                raise ValueError(f"Wrong tool called: {tool_name}")
+                
+        except Exception as e:
+            # Don't handle the error here, just ensure context is captured
+            context["error_location"] = self._identify_error_location(e, context)
+            raise  # Re-raise for global handling
+    
+    def make_assertion_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
+        """Make assertion decision with full context capture for documentation."""
+        context: Dict[str, Any] = {
+            "prompts": None,
+            "llm_response": None,
+            "tool_call": None,
+            "parameters": None,
+            "validated_parameters": None,
+            "assertion_type": None
+        }
+        
+        try:
+            if not self.game or self.player_index is None:
+                raise ValueError("No game context set for assertion")
+            
+            # Increment game turn for any assertion attempt (valid or invalid)
+            self.game.increment_game_turn()
+            
+            # Capture prompts
+            prompt = self.game.prompt_for_assertion(self.player_index)
+            messages = [
+                ("system", self.get_system_message()),
+                ("user", f"{prompt}\n\nMake your assertion decision using either assert_fish_tool or skip_assertion_tool.")
+            ]
+            context["prompts"] = messages
+            
+            # Capture LLM response
+            response = self.llm.invoke(messages)
+            context["llm_response"] = json.loads(response.model_dump_json())
+            
+            # Capture tool call
+            tool_call = self._extract_tool_call(response)
+            context["tool_call"] = tool_call
+            
+            if not tool_call:
+                raise ValueError("No tool call made")
+            
+            # Capture parameters
+            tool_name = tool_call['name']
+            args = tool_call['args']
+            context["parameters"] = {"tool_name": tool_name, "args": args}
+            
+            # Business logic with parameter validation
+            if tool_name == 'skip_assertion_tool':
+                context["assertion_type"] = "skip"
+                context["validated_parameters"] = {}
+                
+                result = self.game.skip_assertion(self.player_index)
+                return result, context
+                
+            elif tool_name == 'assert_fish_tool' or tool_name == 'assert_fish_tool_gpt_oss':
+                enemy_index = args.get('enemy_index')
+                fish_name = args.get('fish_name')
+                
+                if enemy_index is None or fish_name is None:
+                    raise ValueError("Missing assertion parameters")
+                
+                # Convert string argument to integer
+                enemy_index = int(enemy_index)
+                
+                context["assertion_type"] = "assert_fish"
+                context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
+                
+                result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
+                return result, context
+                
+            else:
+                raise ValueError(f"Wrong tool called: {tool_name}")
+                
+        except Exception as e:
+            # Don't handle the error here, just ensure context is captured
+            context["error_location"] = self._identify_error_location(e, context)
+            raise  # Re-raise for global handling
+
 
 class OllamaGameManager:
     """Manages AI vs AI games using Ollama language models."""
@@ -833,6 +1027,183 @@ class OllamaGameManager:
         player2.set_game_context(game, 1)
         
         return game, player1, player2
+    
+    # ------------------------------------------------------------------
+    # Global error handling and documentation methods
+    # ------------------------------------------------------------------
+    
+    def _categorize_error(self, exception: Exception) -> str:
+        """Categorize errors for consistent handling."""
+        
+        # LLM/Network errors
+        if any(keyword in str(exception).lower() for keyword in ['connection', 'timeout', 'server', 'ollama']):
+            return "llm_error"
+        
+        # Parameter validation errors  
+        if isinstance(exception, (ValueError, TypeError)) and any(keyword in str(exception) for keyword in ['invalid literal', 'parameter', 'index']):
+            return "parameter_error"
+        
+        # Game logic errors
+        if any(keyword in str(exception) for keyword in ['fish', 'team', 'attack', 'skill']):
+            return "game_logic_error"
+            
+        # System errors (like our KeyError: '0')
+        if isinstance(exception, (KeyError, AttributeError)):
+            return "system_error"
+        
+        # Default
+        return "unknown_error"
+    
+    def _format_error_message(self, exception: Exception, error_category: str) -> str:
+        """Generate user-friendly error messages."""
+        
+        if error_category == "parameter_error":
+            if "invalid literal" in str(exception) and "None" in str(exception):
+                return "Invalid parameter types: received 'None' where number expected"
+            elif "missing" in str(exception).lower():
+                return "Missing required parameters for action"
+            else:
+                return "Invalid parameter values provided"
+                
+        elif error_category == "llm_error":
+            return "LLM communication error - server may be unavailable"
+            
+        elif error_category == "game_logic_error":
+            return f"Game logic error: {str(exception)}"
+            
+        elif error_category == "system_error":
+            return "Internal system error - will retry"
+            
+        else:
+            return f"Unexpected error: {str(exception)}"
+    
+    def _log_detailed_error(self, exception: Exception, attempt: int, player_idx: int, game_turn: int) -> None:
+        """Log detailed error information for debugging."""
+        if self.debug:
+            import traceback
+            self._debug_log(f"=== DETAILED ERROR LOG ===")
+            self._debug_log(f"Game turn: {game_turn}")
+            self._debug_log(f"Player: {player_idx}")
+            self._debug_log(f"Attempt: {attempt}")
+            self._debug_log(f"Exception type: {type(exception).__name__}")
+            self._debug_log(f"Exception message: {str(exception)}")
+            self._debug_log(f"Full traceback:")
+            for line in traceback.format_exc().split('\n'):
+                self._debug_log(f"  {line}")
+            self._debug_log(f"=== END ERROR LOG ===")
+    
+    def _track_error_for_evaluation_safely(self, game: 'Game', player_idx: int, error_category: str) -> None:
+        """Track errors in evaluation without causing KeyError."""
+        try:
+            player_key = str(player_idx + 1)  # Convert 0/1 to "1"/"2"
+            
+            # Initialize structure if missing
+            if not hasattr(game, 'evaluation') or game.evaluation is None:
+                game.evaluation = {"players": {}}
+            if "players" not in game.evaluation:
+                game.evaluation["players"] = {}
+            if player_key not in game.evaluation["players"]:
+                game.evaluation["players"][player_key] = {
+                    "invalid_moves": {"total": 0, "by_type": {}}
+                }
+            if "invalid_moves" not in game.evaluation["players"][player_key]:
+                game.evaluation["players"][player_key]["invalid_moves"] = {"total": 0, "by_type": {}}
+                
+            # Safe increment
+            game.evaluation["players"][player_key]["invalid_moves"]["total"] += 1
+            if error_category not in game.evaluation["players"][player_key]["invalid_moves"]["by_type"]:
+                game.evaluation["players"][player_key]["invalid_moves"]["by_type"][error_category] = 0
+            game.evaluation["players"][player_key]["invalid_moves"]["by_type"][error_category] += 1
+            
+        except Exception as e:
+            # If evaluation tracking fails, just log and continue
+            self._debug_log(f"Evaluation tracking failed (non-fatal): {e}")
+    
+    def _add_history_entry_safely(self, game: 'Game', turn_context: Dict[str, Any]) -> None:
+        """Add history entry without triggering evaluation errors."""
+        try:
+            # Build comprehensive history entry
+            history_entry = {
+                # Core turn identification
+                "player": turn_context["player_idx"] + 1,  # 1 or 2
+                "game_turn": game.state.game_turn,
+                "player_turn": game.state.player_turn,
+                "phase": turn_context["phase"],
+                "attempt": turn_context["attempt"],
+                
+                # LLM interaction data (preserved from current system)
+                "input_messages": turn_context.get("prompts", []),
+                "response": turn_context.get("llm_response", {}),
+                "tool_call": turn_context.get("tool_call"),
+                
+                # Action/assertion specifics
+                "action_type": turn_context.get("action_type"),
+                "raw_parameters": turn_context.get("parameters", {}),
+                "validated_parameters": turn_context.get("validated_parameters", {}),
+                
+                # Outcome
+                "success": turn_context["success"],
+                "result": turn_context.get("result", ""),
+                
+                # Error information (if failed)
+                "error": {
+                    "exception": str(turn_context["error"]) if turn_context.get("error") else None,
+                    "exception_type": type(turn_context["error"]).__name__ if turn_context.get("error") else None,
+                    "error_location": turn_context.get("error_location"),
+                    "category": self._categorize_error(turn_context["error"]) if turn_context.get("error") else None
+                } if turn_context.get("error") else None,
+                
+                # Damage tracking (preserved from current system)
+                "damage_dealt": getattr(game, 'current_turn_damage', {}).get('dealt', 0),
+                "damage_taken": getattr(game, 'current_turn_damage', {}).get('taken', 0),
+                
+                # Timestamp for debugging
+                "timestamp": time.time()
+            }
+            
+            # Add to game history
+            game.history.append(history_entry)
+            
+            # Safe evaluation tracking (only for failed attempts)
+            if not turn_context["success"] and turn_context.get("error"):
+                error_category = history_entry["error"]["category"]
+                self._track_error_for_evaluation_safely(game, turn_context["player_idx"], error_category)
+                
+        except Exception as e:
+            # If history tracking fails, just log and continue
+            self._debug_log(f"History tracking failed (non-fatal): {e}")
+    
+    def _save_error_state_safely(self, game: 'Game', final_game_id: str, players_info: Dict[str, Any], 
+                                 exception: Exception, attempt: int) -> None:
+        """Save error state for debugging without crashing."""
+        try:
+            self.persistent_manager.save_game_state(game, final_game_id, players_info)
+            self._debug_log(f"Error state saved for turn {game.state.game_turn} attempt {attempt}")
+        except Exception as save_error:
+            self._debug_log(f"Failed to save error state (non-fatal): {save_error}")
+    
+    def _process_turn_error(self, exception: Exception, attempt: int, max_tries: int, 
+                           player_idx: int, game: 'Game', final_game_id: str, players_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Centralized error processing for turn failures."""
+        
+        # 1. Error categorization
+        error_category = self._categorize_error(exception)
+        
+        # 2. User-friendly message generation  
+        user_message = self._format_error_message(exception, error_category)
+        
+        # 3. Debug logging (detailed technical info)
+        self._log_detailed_error(exception, attempt, player_idx, game.state.game_turn)
+        
+        # 4. Error state preservation
+        self._save_error_state_safely(game, final_game_id, players_info, exception, attempt)
+        
+        return {
+            "user_message": user_message,
+            "final_error": f"Turn failed after {max_tries} attempts: {user_message}",
+            "category": error_category,
+            "technical_details": str(exception)
+        }
     
     def run_ai_vs_ai_game(self, game_id: str, max_turns: int = 100, auto_index: bool = True) -> Dict[str, Any]:
         """Run a complete AI vs AI game until completion.
@@ -942,33 +1313,64 @@ class OllamaGameManager:
                 except Exception:
                     pass
                 
-                # Execute turn with retry logic
+                # Execute turn with global error handling
                 self._debug_log(f"Starting turn execution - Game turn: {game_turn}, Current player: {current_player_idx}, Phase: {game.state.phase}")
                 success = False
+                
                 for attempt in range(max_tries):
-                    self._debug_log(f"Attempt {attempt + 1}/{max_tries}")
-                    action = None
-                    if game.state.phase == "assertion":
-                        self._debug_log("Executing assertion phase")
-                        action = current_player.make_assertion()
-                        print(f"Assertion (attempt {attempt + 1}): {action.message}")
-                        self._debug_log(f"Assertion result: success={action.success}, message='{action.message}'")
-                        
-                    elif game.state.phase == "action":
-                        self._debug_log(f"Executing action phase ({current_player.name})")
-                        action = current_player.make_action()
-                        print(f"Action (attempt {attempt + 1}): {action.message}")
-                        self._debug_log(f"Action result: success={action.success}, message='{action.message}'")
+                    # Create turn context for documentation
+                    turn_context = {
+                        "attempt": attempt + 1,
+                        "player_idx": current_player_idx,
+                        "phase": game.state.phase,
+                        "game_turn": game.state.game_turn,
+                        "success": False,
+                        "error": None
+                    }
                     
-                    if action and action.success:
+                    self._debug_log(f"Attempt {attempt + 1}/{max_tries}")
+                    
+                    try:
+                        # Business logic with context capture
+                        result = None
+                        context = {}
+                        
+                        if game.state.phase == "assertion":
+                            self._debug_log("Executing assertion phase")
+                            result, context = current_player.make_assertion_simple_with_context()
+                            print(f"Assertion (attempt {attempt + 1}): {result}")
+                            
+                        elif game.state.phase == "action":
+                            self._debug_log(f"Executing action phase ({current_player.name})")
+                            result, context = current_player.make_action_simple_with_context()
+                            print(f"Action (attempt {attempt + 1}): {result}")
+                        
+                        # Success - merge contexts and document
+                        turn_context.update(context)
+                        turn_context["success"] = True
+                        turn_context["result"] = result
+                        
+                        # Document successful attempt
+                        self._add_history_entry_safely(game, turn_context)
+                        
                         self._debug_log("Turn successful, breaking retry loop")
                         success = True
                         break
-                    else:
-                        print(f"❌ Turn failed: {action.message if action else 'No action returned'}")
+                        
+                    except Exception as e:
+                        turn_context["error"] = e
+                        turn_context["success"] = False
+                        
+                        # Document failed attempt with full context
+                        self._add_history_entry_safely(game, turn_context)
+                        
+                        # Process error for retry logic
+                        error_info = self._process_turn_error(e, attempt+1, max_tries, current_player_idx, game, final_game_id, players_info)
+                        print(f"❌ Turn failed: {error_info['user_message']}")
+                        
                         if attempt < max_tries - 1:
                             print(f"Retrying... ({attempt + 2}/{max_tries})")
-                        
+                
                 if not success:
                     print(f"❌ Turn failed after {max_tries} attempts. Terminating game.")
                     if game:
