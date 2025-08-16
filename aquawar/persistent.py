@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from .game import Game, FISH_NAMES
 
@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 class PersistentGameManager:
     """Manages persistent Aquawar games with save/load functionality."""
     
-    def __init__(self, save_dir: str = "saves"):
+    def __init__(self, save_dir: str = "saves", debug: bool = False):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(exist_ok=True)
+        self.debug = debug
     
     def get_next_game_id(self) -> str:
         """Find the next available game_{i} ID."""
@@ -43,13 +44,21 @@ class PersistentGameManager:
             return game_dir / f"turn_{turn:03d}.pkl"
         return game_dir / "latest.pkl"
     
-    def save_game_state(self, game: Game, game_id: str) -> str:
-        """Save game state and return the save file path."""
+    def save_game_state(self, game: Game, game_id: str, players_info: Optional[Dict[str, Any]] = None) -> str:
+        """Save game state and return the save file path.
+        
+        Args:
+            game: Game instance to save
+            game_id: Game identifier
+            players_info: Optional dictionary with player information in format:
+                         {"1": [{"name": str, "model": str, "temperature": float, "top_p": float}],
+                          "2": [{"name": str, "model": str, "temperature": float, "top_p": float}]}
+        """
         save_path = self.get_save_path(game_id, game.state.game_turn)
         latest_path = self.get_save_path(game_id)
         
-        game.save_game(str(save_path))
-        game.save_game(str(latest_path))  # Also save as latest
+        game.save_game(str(save_path), players_info)
+        game.save_game(str(latest_path), players_info)  # Also save as latest
         
         return str(save_path)
     
@@ -85,7 +94,7 @@ class PersistentGameManager:
     
     def initialize_new_game(self, game_id: str, player_names: tuple[str, str], config=None) -> Game:
         """Initialize a new game and save it with configuration."""
-        game = Game(player_names)
+        game = Game(player_names, debug=self.debug)
         
         # Create game directory
         game_dir = self.get_game_dir(game_id)

@@ -11,13 +11,13 @@ class ModelConfig:
     """Configuration for a single model."""
     model: str
     temperature: float = 0.7
-    reasoning: bool = False
+    top_p: float = 0.9
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "model": self.model,
             "temperature": self.temperature,
-            "reasoning": self.reasoning
+            "top_p": self.top_p
         }
     
     @classmethod
@@ -25,7 +25,7 @@ class ModelConfig:
         return cls(
             model=data["model"],
             temperature=data.get("temperature", 0.7),
-            reasoning=data.get("reasoning", False)
+            top_p=data.get("top_p", 0.9)
         )
 
 
@@ -87,7 +87,7 @@ class GameConfig:
 
 def create_default_ollama_config(model: str = "llama3.2:3b", temperature: float = 0.7, max_tries: int = 3) -> GameConfig:
     """Create a default configuration for Ollama AI vs AI games."""
-    model_config = ModelConfig(model=model, temperature=temperature, reasoning=False)
+    model_config = ModelConfig(model=model, temperature=temperature, top_p=0.9)
     
     player_1 = PlayerConfig(type="OllamaPlayer", models=[model_config])
     player_2 = PlayerConfig(type="OllamaPlayer", models=[model_config])
@@ -102,8 +102,8 @@ def create_mixed_model_config(
     max_tries: int = 3
 ) -> GameConfig:
     """Create a configuration for testing different models against each other."""
-    model_config_1 = ModelConfig(model=model1, temperature=temperature, reasoning=False)
-    model_config_2 = ModelConfig(model=model2, temperature=temperature, reasoning=False)
+    model_config_1 = ModelConfig(model=model1, temperature=temperature, top_p=0.9)
+    model_config_2 = ModelConfig(model=model2, temperature=temperature, top_p=0.9)
     
     player_1 = PlayerConfig(type="OllamaPlayer", models=[model_config_1])
     player_2 = PlayerConfig(type="OllamaPlayer", models=[model_config_2])

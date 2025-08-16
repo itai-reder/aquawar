@@ -75,8 +75,13 @@ class Fish:
         operations defined in the manual: pre-damage (shield/dodge), on-damage
         (sharing / reduction), damage application and post-damage triggers.
         """
+        
+        if game and hasattr(game, '_debug_log'):
+            game._debug_log(f"Fish.take_damage called: {self.name} taking {amount} damage, direct={direct}")
 
         if amount <= 0 or not self.is_alive():
+            if game and hasattr(game, '_debug_log'):
+                game._debug_log(f"Fish.take_damage: No damage to apply (amount={amount}, alive={self.is_alive()})")
             return 0
 
         # Pre-damage: shields and dodge

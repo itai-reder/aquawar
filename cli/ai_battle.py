@@ -69,6 +69,8 @@ Examples:
     # Logging and output
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="Enable verbose logging")
+    parser.add_argument("--debug", action="store_true",
+                       help="Enable detailed debug logging throughout game execution")
     parser.add_argument("--quiet", "-q", action="store_true",
                        help="Minimize output (only final results)")
     
@@ -306,7 +308,7 @@ def main():
     
     # Initialize game manager with player 1's model as default
     # TODO: Support different models for each player in game manager
-    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model)
+    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug)
     
     try:
         if args.tournament:

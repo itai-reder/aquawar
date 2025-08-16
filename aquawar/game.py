@@ -91,18 +91,67 @@ class GameState:
 class Game:
     history: List[Dict[str, Any]]  # Track turn metadata
     current_turn_damage: Dict[str, int]  # Track damage for current turn
+    evaluation: Dict[str, Any]  # Cumulative evaluation metrics for analysis
+    debug: bool = False  # Debug flag for detailed logging
     
-    def __init__(self, player_names: Tuple[str, str]):
+    def _debug_log(self, message: str) -> None:
+        """Print debug message if debug mode is enabled."""
+        if self.debug:
+            print(f"[GAME DEBUG] {message}")
+    
+    def __init__(self, player_names: Tuple[str, str], debug: bool = False):
         self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])])
         self.state.current_player = 1  # Player 1 starts first
         self.history = []  # List[Dict] to track turn metadata
         self.current_turn_damage = {"dealt": 0, "taken": 0}  # Track damage for current turn
+        self.evaluation = self._initialize_evaluation()  # Initialize evaluation metrics
+        self.debug = debug  # Set debug flag
         for p in self.state.players:
             p.reset_roster()
 
-    # ------------------------------------------------------------------
-    # Selection phase
-    # ------------------------------------------------------------------
+    def _initialize_evaluation(self) -> Dict[str, Any]:
+        """Initialize the evaluation tracking structure."""
+        return {
+            "players": {
+                "1": {
+                    "current_hp": 1600,  # 4 fish * 400 HP each
+                    "damage_dealt": 0,
+                    "damage_taken": 0,
+                    "assertions": {
+                        "true": 0,
+                        "false": 0,
+                        "skipped": 0
+                    },
+                    "invalid_moves": {
+                        "total": 0,
+                        "by_type": {
+                            "invalid_response": 0,   # Tool not called properly, malformed JSON
+                            "invalid_parameter": 0,  # Missing/invalid parameters
+                            "invalid_action": 0      # Game logic errors, exceptions
+                        }
+                    }
+                },
+                "2": {
+                    "current_hp": 1600,  # 4 fish * 400 HP each
+                    "damage_dealt": 0,
+                    "damage_taken": 0,
+                    "assertions": {
+                        "true": 0,
+                        "false": 0,
+                        "skipped": 0
+                    },
+                    "invalid_moves": {
+                        "total": 0,
+                        "by_type": {
+                            "invalid_response": 0,   # Tool not called properly, malformed JSON
+                            "invalid_parameter": 0,  # Missing/invalid parameters
+                            "invalid_action": 0      # Game logic errors, exceptions
+                        }
+                    }
+                }
+            },
+            "game_status": "ongoing"  # "completed", "ongoing", "timeout", "error"
+        }
     def select_team(self, player_idx: int, fish_selection: List[str], mimic_choice: Optional[str] = None) -> None:
         p = self.state.players[player_idx]
         p.team = Team([create_fish(name) for name in fish_selection])
@@ -340,19 +389,36 @@ All fish: 400 HP, 100 ATK base
                     self.track_damage_dealt(damage_applied)
             result = f"Correct! {fish.name} revealed and all enemy fish take 50 HP damage."
             self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Successful assertion: {guess}"))
+            
+            # Update evaluation: successful assertion
+            self._update_evaluation_assertion(player_idx, "true")
         else:
+            self._debug_log(f"Assertion failed - applying 50 HP damage to player {player_idx}'s fish")
             player_team = self.state.players[player_idx].team
             if player_team:
                 # Track damage taken by player's own fish (this counts as damage taken by current player)
-                for f in player_team.fish:
+                for i, f in enumerate(player_team.fish):
                     if f.is_alive():
+                        self._debug_log(f"Applying damage to fish {i}: {f.name} (HP: {f.hp})")
                         damage_applied = f.take_damage(50, None, direct=False, game=self.state)
+                        self._debug_log(f"Damage applied: {damage_applied}, new HP: {f.hp}")
                         self.track_damage_taken(damage_applied)
             result = f"Wrong! {guess} was incorrect, all your fish take 50 HP damage."
             self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Failed assertion: guessed {guess}"))
+            self._debug_log(f"Assertion failure processing complete")
+            
+            # Update evaluation: failed assertion
+            self._update_evaluation_assertion(player_idx, "false")
+        
+        # Update evaluation: cumulative damage and current HP
+        self._debug_log("Updating evaluation metrics")
+        self._update_evaluation_damage(player_idx, self.current_turn_damage["dealt"], self.current_turn_damage["taken"])
+        self._update_evaluation_hp()
         
         # Move to action phase (turn counter will be incremented after action phase)
+        self._debug_log("Moving to action phase")
         self.state.phase = "action"
+        self._debug_log(f"Phase transition complete: assertion -> action")
         return result
 
     def skip_assertion(self, player_idx: int) -> str:
@@ -362,10 +428,16 @@ All fish: 400 HP, 100 ATK base
         
         self.state.phase = "action"
         self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", "Skipped assertion"))
+        
+        # Update evaluation: skipped assertion
+        self._update_evaluation_assertion(player_idx, "skipped")
+        
         return "Assertion phase skipped"
 
     def perform_action(self, player_idx: int, fish_index: int, action: str,
                        target_index: Optional[int] = None) -> str:
+        self._debug_log(f"perform_action called: player_idx={player_idx}, fish_index={fish_index}, action={action}, target_index={target_index}")
+        
         # Start tracking damage for this action if not already started
         if not hasattr(self, 'current_turn_damage'):
             self.reset_turn_damage()
@@ -385,20 +457,30 @@ All fish: 400 HP, 100 ATK base
         if enemy_team is None:
             return "Enemy has no team selected yet."
 
+        self._debug_log(f"perform_action: actor={actor.name}, enemy_team size={len(enemy_team.fish)}")
+
         # Record HP before action to track damage
         enemy_hp_before = {i: f.hp for i, f in enumerate(enemy_team.fish)}
         team_hp_before = {i: f.hp for i, f in enumerate(team.fish)}
 
         if action == "NORMAL":
+            self._debug_log(f"perform_action: processing NORMAL attack")
             if target_index is None:
                 return "Normal attack requires enemy target."
             if target_index >= len(enemy_team.fish):
                 return "Invalid enemy target index."
             target = enemy_team.fish[target_index]
-            actor.normal_attack(target, self.state)
+            self._debug_log(f"perform_action: about to call {actor.name}.normal_attack({target.name})")
+            try:
+                actor.normal_attack(target, self.state)
+                self._debug_log(f"perform_action: normal_attack completed")
+            except Exception as e:
+                self._debug_log(f"ERROR in normal_attack: {e} (type: {type(e).__name__})")
+                raise
             result = f"{actor.name} attacked enemy position {target_index}."
             self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} normal attack on enemy {target_index}"))
         elif action == "ACTIVE":
+            self._debug_log(f"perform_action: processing ACTIVE skill")
             # Set up target selection functions for the active skill
             def choose_teammate_func(actor_idx: int, n: int) -> Optional[Fish]:
                 if target_index is not None and 0 <= target_index < len(team.fish):
@@ -412,7 +494,13 @@ All fish: 400 HP, 100 ATK base
             
             self.state.choose_teammate = choose_teammate_func
             self.state.choose_enemy = choose_enemy_func
-            actor.active(self.state, fish_index)
+            self._debug_log(f"perform_action: about to call {actor.name}.active()")
+            try:
+                actor.active(self.state, fish_index)
+                self._debug_log(f"perform_action: active skill completed")
+            except Exception as e:
+                self._debug_log(f"ERROR in active skill: {e} (type: {type(e).__name__})")
+                raise
             result = f"{actor.name} used active skill."
             target_desc = f" on {target_index}" if target_index is not None else ""
             self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} active skill{target_desc}"))
@@ -430,6 +518,10 @@ All fish: 400 HP, 100 ATK base
             if damage_taken > 0:
                 self.track_damage_taken(damage_taken)
         
+        # Update evaluation: cumulative damage and current HP
+        self._update_evaluation_damage(player_idx, self.current_turn_damage["dealt"], self.current_turn_damage["taken"])
+        self._update_evaluation_hp()
+        
         # Complete the turn: switch to next player and reset to assertion phase ONLY on successful action
         self.state.turn_player = 1 - self.state.turn_player
         self.state.phase = "assertion"
@@ -446,14 +538,24 @@ All fish: 400 HP, 100 ATK base
     # ------------------------------------------------------------------
     # Save/Load functionality
     # ------------------------------------------------------------------
-    def save_game(self, filepath: str) -> None:
-        """Save the current game state to a file."""
+    def save_game(self, filepath: str, players_info: Optional[Dict[str, Any]] = None) -> None:
+        """Save the current game state to a file.
+        
+        Args:
+            filepath: Path to save the game
+            players_info: Optional dictionary with player information in format:
+                         {"1": [{"name": str, "model": str, "temperature": float, "top_p": float}],
+                          "2": [{"name": str, "model": str, "temperature": float, "top_p": float}]}
+        """
         save_data = {
             'state': self._serialize_state(),
             'history': getattr(self, 'history', []),  # Default empty if not present
-            'current_turn_damage': getattr(self, 'current_turn_damage', {"dealt": 0, "taken": 0}),
-            'version': '1.3.0'  # Version tracks save format changes for backward compatibility
+            'evaluation': getattr(self, 'evaluation', self._initialize_evaluation())  # Include evaluation data
         }
+        
+        # Add players info if provided
+        if players_info is not None:
+            save_data['players'] = players_info
         
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, 'wb') as f:
@@ -468,11 +570,28 @@ All fish: 400 HP, 100 ATK base
         game = cls.__new__(cls)  # Create instance without calling __init__
         game._deserialize_state(save_data['state'])
         
-        # Handle history field (added in v1.1, default to empty for older saves)
+        # Handle history field (default to empty for older saves)
         game.history = save_data.get('history', [])
         
-        # Handle current_turn_damage field (added in v1.3, default to empty for older saves)
+        # Handle current_turn_damage field (backward compatibility with old saves)
         game.current_turn_damage = save_data.get('current_turn_damage', {"dealt": 0, "taken": 0})
+        
+        # Handle evaluation field (backward compatibility with old saves)
+        if hasattr(game, '_initialize_evaluation'):
+            game.evaluation = save_data.get('evaluation', game._initialize_evaluation())
+        else:
+            # Fallback for when method isn't available during deserialization
+            game.evaluation = save_data.get('evaluation', {
+                "players": {
+                    "1": {"current_hp": 1600, "damage_dealt": 0, "damage_taken": 0, 
+                          "assertions": {"true": 0, "false": 0, "skipped": 0}, 
+                          "invalid_moves": {"total": 0, "by_type": {"invalid_response": 0, "invalid_parameter": 0, "invalid_action": 0}}},
+                    "2": {"current_hp": 1600, "damage_dealt": 0, "damage_taken": 0, 
+                          "assertions": {"true": 0, "false": 0, "skipped": 0}, 
+                          "invalid_moves": {"total": 0, "by_type": {"invalid_response": 0, "invalid_parameter": 0, "invalid_action": 0}}}
+                },
+                "game_status": "ongoing"
+            })
         
         return game
     
@@ -586,6 +705,55 @@ All fish: 400 HP, 100 ATK base
         )
 
     # ------------------------------------------------------------------
+    # Evaluation tracking
+    # ------------------------------------------------------------------
+    def _update_evaluation_hp(self) -> None:
+        """Update current HP for both players in evaluation."""
+        for player_idx, player_state in enumerate(self.state.players):
+            player_key = str(player_idx + 1)
+            if player_state.team:
+                current_hp = sum(f.hp for f in player_state.team.fish if f.is_alive())
+                self.evaluation["players"][player_key]["current_hp"] = current_hp
+    
+    def _update_evaluation_damage(self, player_idx: int, damage_dealt: int, damage_taken: int) -> None:
+        """Update cumulative damage for a player in evaluation."""
+        player_key = str(player_idx + 1)
+        self.evaluation["players"][player_key]["damage_dealt"] += damage_dealt
+        self.evaluation["players"][player_key]["damage_taken"] += damage_taken
+    
+    def _update_evaluation_assertion(self, player_idx: int, assertion_type: str) -> None:
+        """Update assertion count for a player in evaluation.
+        
+        Args:
+            player_idx: Player index (0 or 1)
+            assertion_type: "true", "false", or "skipped"
+        """
+        player_key = str(player_idx + 1)
+        if assertion_type in ["true", "false", "skipped"]:
+            self.evaluation["players"][player_key]["assertions"][assertion_type] += 1
+    
+    def _update_evaluation_invalid_move(self, player_idx: int, invalid_type: str) -> None:
+        """Update invalid move count for a player in evaluation.
+        
+        Args:
+            player_idx: Player index (0 or 1) 
+            invalid_type: "invalid_response", "invalid_parameter", or "invalid_action"
+        """
+        player_key = str(player_idx + 1)
+        if invalid_type in ["invalid_response", "invalid_parameter", "invalid_action"]:
+            self.evaluation["players"][player_key]["invalid_moves"]["total"] += 1
+            self.evaluation["players"][player_key]["invalid_moves"]["by_type"][invalid_type] += 1
+    
+    def _update_evaluation_game_status(self, status: str) -> None:
+        """Update game status in evaluation.
+        
+        Args:
+            status: "completed", "ongoing", "timeout", or "error"
+        """
+        if status in ["completed", "ongoing", "timeout", "error"]:
+            self.evaluation["game_status"] = status
+
+    # ------------------------------------------------------------------
     # History tracking
     # ------------------------------------------------------------------
     def reset_turn_damage(self) -> None:
@@ -605,6 +773,10 @@ All fish: 400 HP, 100 ATK base
         # Convert to new format
         valid = validity == "valid"
         move = response if valid else validity
+        
+        # Track invalid moves in evaluation if move was invalid  
+        if not valid:
+            self._track_invalid_move_from_move_description(player, validity)
         
         # Get damage for this turn
         damage_dealt = self.current_turn_damage["dealt"]
@@ -626,6 +798,11 @@ All fish: 400 HP, 100 ATK base
     def add_history_entry_with_retry(self, player: int, input_messages: List[Any], response: Dict[str, Any], 
                                    valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0) -> None:
         """Add history entry with retry information for failed attempts."""
+        
+        # Track invalid moves in evaluation if move was invalid
+        if not valid:
+            self._track_invalid_move_from_move_description(player - 1, move)
+        
         self.history.append({
             "player": player + 1,  # 1 or 2
             "game_turn": self.state.game_turn,
@@ -637,6 +814,19 @@ All fish: 400 HP, 100 ATK base
             "damage_dealt": damage_dealt,
             "damage_taken": damage_taken
         })
+    
+    def _track_invalid_move_from_move_description(self, player_idx: int, move_description: str) -> None:
+        """Classify and track invalid move based on move description."""
+        # Classify the invalid move type based on common error patterns
+        if any(keyword in move_description.lower() for keyword in ["no tool call", "malformed", "wrong tool", "invalid response"]):
+            invalid_type = "invalid_response"
+        elif any(keyword in move_description.lower() for keyword in ["missing", "invalid enemy index", "invalid fish name", "invalid argument", "invalid parameter"]):
+            invalid_type = "invalid_parameter"
+        else:
+            # Default to invalid_action for server errors, exceptions, game logic errors
+            invalid_type = "invalid_action"
+        
+        self._update_evaluation_invalid_move(player_idx, invalid_type)
     
     def increment_game_turn(self) -> None:
         """Increment game turn counter for any action/assertion attempt."""

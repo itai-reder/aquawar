@@ -216,7 +216,7 @@ class OllamaPlayer:
         self.llm = ChatOllama(
             model=model,
             temperature=temperature,
-            reasoning=False, # TODO: Implement reasoning if needed in pipeline
+            top_p=0.9,
         ).bind_tools(tools)
         
         # Game context

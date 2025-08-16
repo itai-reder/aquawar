@@ -1,0 +1,568 @@
+🐟 Aquawar AI vs AI Battle System
+==================================================
+🤖 Players: AI Alpha vs AI Beta
+🧠 Models: llama3.1:8b vs mistral-nemo:12b
+🎯 Objective: Play until one player loses all fish
+
+🚀 Starting game...
+Using auto-indexed game ID: ai_battle_014
+Starting AI vs AI game: AI Player 1 vs AI Player 2
+Using model: llama3.1:8b
+
+AI Player 1 selecting team...
+✓ Selected team: ['Archerfish', 'Electric Eel', 'Manta Ray', 'Great White Shark']
+
+AI Player 2 selecting team...
+✓ Selected team: ['Archerfish', 'Electric Eel', 'Manta Ray', 'Great White Shark']
+
+Starting battle phase...
+
+Game Turn 1: AI Player 1's turn (Player Turn 1)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 1, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 0's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Sea Wolf was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Sea Wolf was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 2: AI Player 1's turn (Player Turn 1)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 2, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Manta Ray used active skill.
+[DEBUG] Action result: success=True, message='Manta Ray used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 3: AI Player 2's turn (Player Turn 1)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 3, Current player: 1, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 1's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 400)
+[GAME DEBUG] Damage applied: 50, new HP: 350
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1400 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 4: AI Player 2's turn (Player Turn 1)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 4, Current player: 1, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Invalid parameter types: fish_index=0, target_index=null
+[DEBUG] Action result: success=False, message='Invalid parameter types: fish_index=0, target_index=null'
+❌ Turn failed: Invalid parameter types: fish_index=0, target_index=null
+Retrying... (2/3)
+[DEBUG] Attempt 2/3
+[DEBUG] Executing action phase
+Action (attempt 2): Archerfish attacked enemy position 0.
+[DEBUG] Action result: success=True, message='Archerfish attacked enemy position 0.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1350 total HP
+AI Player 2: 4/4 fish alive, 1400 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 5: AI Player 1's turn (Player Turn 2)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 5, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Correct! Archerfish revealed and all enemy fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Correct! Archerfish revealed and all enemy fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1350 total HP
+AI Player 2: 4/4 fish alive, 1200 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 6: AI Player 1's turn (Player Turn 2)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 6, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Archerfish attacked enemy position 1.
+[DEBUG] Action result: success=True, message='Archerfish attacked enemy position 1.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1350 total HP
+AI Player 2: 4/4 fish alive, 1170 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 7: AI Player 2's turn (Player Turn 2)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 7, Current player: 1, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 1's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 295)
+[GAME DEBUG] Damage applied: 50, new HP: 245
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 265)
+[GAME DEBUG] Damage applied: 50, new HP: 215
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 295)
+[GAME DEBUG] Damage applied: 50, new HP: 245
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 315)
+[GAME DEBUG] Damage applied: 50, new HP: 265
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1350 total HP
+AI Player 2: 4/4 fish alive, 970 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 8: AI Player 2's turn (Player Turn 2)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 8, Current player: 1, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Archerfish used active skill.
+[DEBUG] Action result: success=True, message='Archerfish used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1251 total HP
+AI Player 2: 4/4 fish alive, 970 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 9: AI Player 1's turn (Player Turn 3)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 9, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 0's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 262)
+[GAME DEBUG] Damage applied: 50, new HP: 212
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 325)
+[GAME DEBUG] Damage applied: 50, new HP: 275
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 312)
+[GAME DEBUG] Damage applied: 50, new HP: 262
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 352)
+[GAME DEBUG] Damage applied: 50, new HP: 302
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Archerfish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Archerfish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1051 total HP
+AI Player 2: 4/4 fish alive, 970 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 10: AI Player 1's turn (Player Turn 3)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 10, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Manta Ray used active skill.
+[DEBUG] Action result: success=True, message='Manta Ray used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1051 total HP
+AI Player 2: 4/4 fish alive, 970 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 11: AI Player 2's turn (Player Turn 3)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 11, Current player: 1, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 1's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 245)
+[GAME DEBUG] Damage applied: 50, new HP: 195
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 215)
+[GAME DEBUG] Damage applied: 50, new HP: 165
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 245)
+[GAME DEBUG] Damage applied: 50, new HP: 195
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 265)
+[GAME DEBUG] Damage applied: 50, new HP: 215
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1051 total HP
+AI Player 2: 4/4 fish alive, 770 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 12: AI Player 2's turn (Player Turn 3)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 12, Current player: 1, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Archerfish attacked enemy position 0.
+[DEBUG] Action result: success=True, message='Archerfish attacked enemy position 0.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1036 total HP
+AI Player 2: 4/4 fish alive, 770 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 13: AI Player 1's turn (Player Turn 4)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 13, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 0's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 197)
+[GAME DEBUG] Damage applied: 50, new HP: 147
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 275)
+[GAME DEBUG] Damage applied: 50, new HP: 225
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 262)
+[GAME DEBUG] Damage applied: 50, new HP: 212
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 302)
+[GAME DEBUG] Damage applied: 50, new HP: 252
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Archerfish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Archerfish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 836 total HP
+AI Player 2: 4/4 fish alive, 770 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 14: AI Player 1's turn (Player Turn 4)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 14, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Archerfish used active skill.
+[DEBUG] Action result: success=True, message='Archerfish used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 836 total HP
+AI Player 2: 4/4 fish alive, 671 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 15: AI Player 2's turn (Player Turn 4)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 15, Current player: 1, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 1's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 157)
+[GAME DEBUG] Damage applied: 50, new HP: 107
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 140)
+[GAME DEBUG] Damage applied: 50, new HP: 90
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 157)
+[GAME DEBUG] Damage applied: 50, new HP: 107
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 217)
+[GAME DEBUG] Damage applied: 50, new HP: 167
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Great White Shark was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Great White Shark was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 836 total HP
+AI Player 2: 4/4 fish alive, 471 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 16: AI Player 2's turn (Player Turn 4)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 16, Current player: 1, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Invalid parameter types: fish_index=0, target_index=None
+[DEBUG] Action result: success=False, message='Invalid parameter types: fish_index=0, target_index=None'
+❌ Turn failed: Invalid parameter types: fish_index=0, target_index=None
+Retrying... (2/3)
+[DEBUG] Attempt 2/3
+[DEBUG] Executing action phase
+Action (attempt 2): Invalid parameter types: fish_index=2, target_index=null
+[DEBUG] Action result: success=False, message='Invalid parameter types: fish_index=2, target_index=null'
+❌ Turn failed: Invalid parameter types: fish_index=2, target_index=null
+Retrying... (3/3)
+[DEBUG] Attempt 3/3
+[DEBUG] Executing action phase
+Action (attempt 3): Archerfish used active skill.
+[DEBUG] Action result: success=True, message='Archerfish used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 737 total HP
+AI Player 2: 4/4 fish alive, 471 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 17: AI Player 1's turn (Player Turn 5)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 17, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 0's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 109)
+[GAME DEBUG] Damage applied: 50, new HP: 59
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 200)
+[GAME DEBUG] Damage applied: 50, new HP: 150
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 174)
+[GAME DEBUG] Damage applied: 50, new HP: 124
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 254)
+[GAME DEBUG] Damage applied: 50, new HP: 204
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Pufferfish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Pufferfish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 537 total HP
+AI Player 2: 4/4 fish alive, 471 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 18: AI Player 1's turn (Player Turn 5)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 18, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Archerfish used active skill.
+[DEBUG] Action result: success=True, message='Archerfish used active skill.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 537 total HP
+AI Player 2: 4/4 fish alive, 372 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 19: AI Player 2's turn (Player Turn 5)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 19, Current player: 1, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 1's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 69)
+[GAME DEBUG] Damage applied: 50, new HP: 19
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 65)
+[GAME DEBUG] Damage applied: 50, new HP: 15
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 69)
+[GAME DEBUG] Damage applied: 50, new HP: 19
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 169)
+[GAME DEBUG] Damage applied: 50, new HP: 119
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Mimic Fish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 537 total HP
+AI Player 2: 4/4 fish alive, 172 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 20: AI Player 2's turn (Player Turn 5)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 20, Current player: 1, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+Action (attempt 1): Wrong tool called: select_team_tool
+[DEBUG] Action result: success=False, message='Wrong tool called: select_team_tool'
+❌ Turn failed: Wrong tool called: select_team_tool
+Retrying... (2/3)
+[DEBUG] Attempt 2/3
+[DEBUG] Executing action phase
+Action (attempt 2): Archerfish attacked enemy position 1.
+[DEBUG] Action result: success=True, message='Archerfish attacked enemy position 1.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 507 total HP
+AI Player 2: 3/4 fish alive, 153 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 21: AI Player 1's turn (Player Turn 6)
+Phase: assertion
+[DEBUG] Starting turn execution - Game turn: 21, Current player: 0, Phase: assertion
+[DEBUG] Attempt 1/3
+[DEBUG] Executing assertion phase
+[GAME DEBUG] Assertion failed - applying 50 HP damage to player 0's fish
+[GAME DEBUG] Applying damage to fish 0: Archerfish (HP: 54)
+[GAME DEBUG] Damage applied: 50, new HP: 4
+[GAME DEBUG] Applying damage to fish 1: Electric Eel (HP: 115)
+[GAME DEBUG] Damage applied: 50, new HP: 65
+[GAME DEBUG] Applying damage to fish 2: Manta Ray (HP: 119)
+[GAME DEBUG] Damage applied: 50, new HP: 69
+[GAME DEBUG] Applying damage to fish 3: Great White Shark (HP: 219)
+[GAME DEBUG] Damage applied: 50, new HP: 169
+[GAME DEBUG] Assertion failure processing complete
+[GAME DEBUG] Updating evaluation metrics
+[GAME DEBUG] Moving to action phase
+[GAME DEBUG] Phase transition complete: assertion -> action
+Assertion (attempt 1): Wrong! Pufferfish was incorrect, all your fish take 50 HP damage.
+[DEBUG] Assertion result: success=True, message='Wrong! Pufferfish was incorrect, all your fish take 50 HP damage.'
+[DEBUG] Turn successful, breaking retry loop
+[DEBUG] Starting post-turn save operation
+[DEBUG] Save operation completed
+[DEBUG] Starting team status display
+
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 307 total HP
+AI Player 2: 3/4 fish alive, 153 total HP
+-------------------
+[DEBUG] Team status display completed
+
+Game Turn 22: AI Player 1's turn (Player Turn 6)
+Phase: action
+[DEBUG] Starting turn execution - Game turn: 22, Current player: 0, Phase: action
+[DEBUG] Attempt 1/3
+[DEBUG] Executing action phase
+
+==================================================
+🏆 GAME RESULTS
+==================================================
+❌ Game failed: Game execution error: '0'
+📊 Turns completed: 0
+⏱️ Duration: 22.4 seconds
+
+❌ Battle failed!
