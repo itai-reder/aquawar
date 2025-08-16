@@ -1,0 +1,22 @@
+{
+  "player_1": {
+    "type": "OllamaPlayer",
+    "models": [
+      {
+        "model": "llama3.2:3b",
+        "temperature": 0.7,
+        "reasoning": false
+      }
+    ]
+  },
+  "player_2": {
+    "type": "OllamaPlayer",
+    "models": [
+      {
+        "model": "llama3.2:3b",
+        "temperature": 0.7,
+        "reasoning": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,352 @@
+python3 -m demos.test_ollama_ai llama3.1:8b
+🐟 Aquawar v1.2.0 - Ollama AI vs AI Demo
+==================================================
+✓ Langchain dependencies found
+
+🔧 Testing Ollama connection...
+✓ Ollama llama3.1:8b model accessible
+
+🎮 Initializing AI vs AI game...
+🤖 Players: Aqua AI Alpha vs Aqua AI Beta
+🎯 Objective: Play until one player loses all fish
+
+🚀 Starting game...
+Starting AI vs AI game: AI Player 1 vs AI Player 2
+Using model: llama3.1:8b
+
+AI Player 1 selecting team...
+✓ Selected team: ['Archerfish', 'Electric Eel', 'Ma
+nta Ray', 'Great White Shark']                     
+AI Player 2 selecting team...
+✓ Selected team: ['Archerfish', 'Electric Eel', 'Ma
+nta Ray', 'Great White Shark']                     
+Starting battle phase...
+
+Turn 1: AI Player 1's turn
+Phase: assertion
+Assertion: Wrong! Mimic Fish was incorrect, all you
+r fish take 50 HP damage.                          
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 2: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_002.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 3: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_003.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 4: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_004.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 5: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_005.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 6: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_006.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 7: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_007.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 8: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_008.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 9: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_009.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 10: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_010.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 11: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_011.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 12: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_012.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 13: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_013.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 14: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_014.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 15: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_015.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 16: AI Player 1's turn
+Phase: action
+Action: Error in action: '>=' not supported between
+ instances of 'str' and 'int'                      ❌ Turn failed: Error in action: '>=' not supported
+ between instances of 'str' and 'int'              Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_016.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 17: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_017.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 18: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_018.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 19: AI Player 1's turn
+Phase: action
+Action: Wrong tool called: select_team_tool
+❌ Turn failed: Wrong tool called: select_team_tool
+Error state saved to: saves/ollama_test/ai_vs_ai_de
+mo/error_019.pkl                                   
+--- Team Status ---
+AI Player 1: 4/4 fish alive, 1400 total HP
+AI Player 2: 4/4 fish alive, 1600 total HP
+-------------------
+
+Turn 20: AI Player 1's turn
+Phase: action
+^CTraceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_a
+s_main                                               File "<frozen runpy>", line 88, in _run_code
+  File "/home/itai/git/aquawar/demos/test_ollama_ai
+.py", line 115, in <module>                            sys.exit(main())
+             ~~~~^^
+  File "/home/itai/git/aquawar/demos/test_ollama_ai
+.py", line 65, in main                                 result = game_manager.run_ai_vs_ai_game(
+        game_id=game_id,
+        max_turns=200  # Prevent infinite games
+    )
+  File "/home/itai/git/aquawar/utils/ollama_client.
+py", line 523, in run_ai_vs_ai_game                    action = current_player.make_action()
+  File "/home/itai/git/aquawar/utils/ollama_client.
+py", line 358, in make_action                          response = self.llm.invoke(messages)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_core/runnables/base.py", line 5441, in invoke                               return self.bound.invoke(
+           ~~~~~~~~~~~~~~~~~^
+        input,
+        ^^^^^^
+        self._merge_configs(config),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{**self.kwargs, **kwargs},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_core/language_models/chat_models.py", line 383, in invoke                   self.generate_prompt(
+    ~~~~~~~~~~~~~~~~~~~~^
+        [self._convert_input(input)],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ).generations[0][0],
+    ^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_core/language_models/chat_models.py", line 1006, in generate_prompt         return self.generate(prompt_messages, stop=stop
+, callbacks=callbacks, **kwargs)                              ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                     File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_core/language_models/chat_models.py", line 825, in generate                 self._generate_with_cache(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_core/language_models/chat_models.py", line 1072, in _generate_with_cache    result = self._generate(
+        messages, stop=stop, run_manager=run_manage
+r, **kwargs                                            )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_ollama/chat_models.py", line 819, in _generate                              final_chunk = self._chat_stream_with_aggregatio
+n(                                                         messages, stop, run_manager, verbose=self.v
+erbose, **kwargs                                       )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_ollama/chat_models.py", line 754, in _chat_stream_with_aggregation          for chunk in self._iterate_over_stream(messages
+, stop, **kwargs):                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+^^^^^^^^^^^^^^^^^                                    File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_ollama/chat_models.py", line 841, in _iterate_over_stream                   for stream_resp in self._create_chat_stream(mes
+sages, stop, **kwargs):                                                   ~~~~~~~~~~~~~~~~~~~~~~~~^^^^
+^^^^^^^^^^^^^^^^^^^^^^                               File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/langchain_ollama/chat_models.py", line 740, in _create_chat_stream                    yield from self._client.chat(**chat_params)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/ollama/_client.py", line 165, in inner                                                with self._client.stream(*args, **kwargs) as r:
+         ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/contextlib.py", line 141, in __enter__           return next(self.gen)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_client.py", line 868, in stream                                                response = self.send(
+        request=request,
+    ...<2 lines>...
+        stream=True,
+    )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_client.py", line 914, in send                                                  response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_client.py", line 942, in _send_handling_auth                                   response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_client.py", line 979, in _send_handling_redirects                              response = self._send_single_request(request)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_client.py", line 1014, in _send_single_request                                 response = transport.handle_request(request)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpx/_transports/default.py", line 250, in handle_request                            resp = self._pool.handle_request(req)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request                       raise exc from None
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request                       response = connection.handle_request(
+        pool_request.request
+    )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/connection.py", line 103, in handle_request                            return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/http11.py", line 136, in handle_request                                raise exc
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/http11.py", line 106, in handle_request                                ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers                     event = self._receive_event(timeout=timeout)
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_sync/http11.py", line 217, in _receive_event                                data = self._network_stream.read(
+        self.READ_NUM_BYTES, timeout=timeout
+    )
+  File "/home/itai/anaconda3/envs/aquawar/lib/pytho
+n3.13/site-packages/httpcore/_backends/sync.py", line 128, in read                                        return self._sock.recv(max_bytes)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^
+KeyboardInterrupt
+
