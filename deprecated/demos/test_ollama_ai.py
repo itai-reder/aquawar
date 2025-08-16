@@ -10,9 +10,9 @@ import time
 from pathlib import Path
 
 # Add the aquawar_game module to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from utils.ollama_client import OllamaGameManager
+from deprecated.utils.ollama_client import OllamaGameManager
 
 
 def main():
