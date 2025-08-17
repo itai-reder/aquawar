@@ -107,6 +107,7 @@ class Game:
         self.current_turn_damage = {"dealt": 0, "taken": 0}  # Track damage for current turn
         self.evaluation = self._initialize_evaluation()  # Initialize evaluation metrics
         self.debug = debug  # Set debug flag
+        print(f"=== Game initialized: {player_names[0]} vs {player_names[1]} (Debug mode: {self.debug}) ===")
         for p in self.state.players:
             p.reset_roster()
 
@@ -798,25 +799,63 @@ All fish: 400 HP, 100 ATK base
             "damage_taken": damage_taken
         })
     
-    def add_history_entry_with_retry(self, player: int, input_messages: List[Any], response: Dict[str, Any], 
-                                   valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0) -> None:
-        """Add history entry with retry information for failed attempts."""
+    def add_history_entry_unified(self, player_index: int, input_messages: List[Any], response: Dict[str, Any], 
+                                 valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0, 
+                                 attempt: int = 1, max_attempts: int = 1, error_details: Optional[Dict] = None) -> None:
+        """Unified history entry function that fixes double increment and message mutation bugs."""
+        
+        self._debug_log(f"add_history_entry_unified called: player_index={player_index}, valid={valid}, move={move[:25]}..., attempt={attempt}/{max_attempts}")
+        # Fix double increment: use player_index directly (0-based), convert to 1-based for history
+        player_num = player_index + 1  # Convert 0-based to 1-based for history
         
         # Track invalid moves in evaluation if move was invalid
         if not valid:
-            self._track_invalid_move_from_move_description(player - 1, move)
+            self._track_invalid_move_from_move_description(player_index, move)
         
-        self.history.append({
-            "player": player + 1,  # 1 or 2
+        # Create copy of input messages to prevent mutation across entries
+        messages_copy = [msg.copy() if isinstance(msg, dict) else msg for msg in input_messages]
+        
+        # Build history entry with consistent structure
+        history_entry = {
+            "player": player_num,  # 1 or 2 (fixed - no double increment)
             "game_turn": self.state.game_turn,
             "player_turn": self.state.player_turn,
-            "input_messages": input_messages,  # All prompts and retry messages
+            "input_messages": messages_copy,  # Prevent shared object mutation
             "response": response,  # Raw LLM response object
             "valid": valid,
             "move": move,
             "damage_dealt": damage_dealt,
-            "damage_taken": damage_taken
-        })
+            "damage_taken": damage_taken,
+            "attempt": attempt,
+            "max_attempts": max_attempts
+        }
+        
+        # Add error details if provided (for failed attempts)
+        if error_details:
+            history_entry["error_details"] = error_details
+        self._debug_log(f"Adding history entry: {history_entry} ({len(self.history)} -> {len(self.history) + 1})")
+        self.history.append(history_entry)
+
+    # OLD FUNCTION - COMMENTED OUT FOR COMPARISON
+    # def add_history_entry_with_retry(self, player: int, input_messages: List[Any], response: Dict[str, Any], 
+    #                                valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0) -> None:
+    #     """Add history entry with retry information for failed attempts."""
+    #     
+    #     # Track invalid moves in evaluation if move was invalid
+    #     if not valid:
+    #         self._track_invalid_move_from_move_description(player - 1, move)
+    #     
+    #     self.history.append({
+    #         "player": player + 1,  # 1 or 2 - BUG: DOUBLE INCREMENT!
+    #         "game_turn": self.state.game_turn,
+    #         "player_turn": self.state.player_turn,
+    #         "input_messages": input_messages,  # All prompts and retry messages - BUG: SHARED OBJECT MUTATION!
+    #         "response": response,  # Raw LLM response object
+    #         "valid": valid,
+    #         "move": move,
+    #         "damage_dealt": damage_dealt,
+    #         "damage_taken": damage_taken
+    #     })
     
     def _track_invalid_move_from_move_description(self, player_idx: int, move_description: str) -> None:
         """Classify and track invalid move based on move description."""

@@ -14,6 +14,8 @@ from typing import Dict, Any, Optional
 # Add the project root to path for now (until proper package installation)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from aquawar.ai.ollama_player import OllamaGameManager
+
 
 def create_argument_parser() -> argparse.ArgumentParser:
     """Create command-line argument parser for AI battle script."""
@@ -301,19 +303,7 @@ def main():
     # Validate models
     if not validate_models(player1_model, player2_model, args.verbose):
         return 1
-    
-    # Import game manager (after validation to give better error messages)
-    try:
-        # For now, import from utils until we complete the reorganization
-        from utils.ollama_client import OllamaGameManager
-    except ImportError:
-        # Fallback to new location if reorganization is complete
-        try:
-            from aquawar.ai.ollama_player import OllamaGameManager
-        except ImportError as e:
-            print(f"❌ Could not import OllamaGameManager: {e}")
-            print("Make sure the reorganization is complete or run from project root")
-            return 1
+
     
     # Initialize game manager 
     game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)

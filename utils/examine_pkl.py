@@ -3,6 +3,21 @@ import json
 import os
 import argparse
 
+def _recursive_shorten(obj, max_length):
+    """Recursively shorten strings in a nested structure."""
+    if isinstance(obj, dict):
+        return {k: _recursive_shorten(v, max_length) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_recursive_shorten(item, max_length) for item in obj]
+    elif isinstance(obj, str):
+        return obj[:max_length] + '...' if len(obj) > max_length else obj
+    return obj
+
+def shorten_strings_for_display(state: dict, max_length: int = 50) -> str:
+    """Shorten strings in the state dictionary for display."""
+    shortened_state = _recursive_shorten(state, max_length)
+    return json.dumps(shortened_state, indent=2)
+
 def unpack_pkl(select_files=['latest.pkl'], save_dir=""):
     for file in select_files:
         with open(os.path.join(save_dir, file), "rb") as f:
@@ -14,7 +29,8 @@ def unpack_pkl(select_files=['latest.pkl'], save_dir=""):
                     print(f"  {k}: {[f'{kk}: {type(vv).__name__}' for kk, vv in v.items()]} | {len(v)} items")
                 elif type(v) is list and len(v) > 0 and type(v[-1]) is dict:
                     print(f"  {k}: list({[f'{kk}: {type(vv).__name__}' for kk, vv in v[-1].items()]}) | {len(v)} items")
-            print(json.dumps(state, indent=2))
+            # print(json.dumps(state, indent=2))
+            print(shorten_strings_for_display(state, max_length=50))
 
 def main():
     parser = argparse.ArgumentParser(description="Unpack and examine pickle files")
