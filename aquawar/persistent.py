@@ -17,6 +17,11 @@ from .game import Game, FISH_NAMES
 class PersistentGameManager:
     """Manages persistent Aquawar games with save/load functionality."""
     
+    def _debug_log(self, message: str) -> None:
+        """Print debug message if debug mode is enabled."""
+        if self.debug:
+            print(f"[DEBUG] {message}")
+
     def __init__(self, save_dir: str = "saves", debug: bool = False):
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(exist_ok=True)
@@ -56,6 +61,7 @@ class PersistentGameManager:
         save_path = self.get_save_path(player1_string, player2_string, round_num, game.state.game_turn)
         latest_path = self.get_save_path(player1_string, player2_string, round_num)
         
+        self._debug_log(f"Saving game state to {save_path} and {latest_path}")
         game.save_game(str(save_path), players_info)
         game.save_game(str(latest_path), players_info)  # Also save as latest
         

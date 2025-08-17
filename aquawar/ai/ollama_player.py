@@ -78,6 +78,7 @@ class ErrorHandlingRegistry:
         Returns:
             Standardized error context dictionary
         """
+        print(f"[DEBUG] Player {player_idx}, Turn {game_turn}, Operation {operation}, Attempt {attempt}")
         context = {
             "operation": operation,
             "attempt": attempt,
@@ -578,7 +579,8 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 # Add previous error information for retry attempts
                 if attempt > 0 and responses:
                     last_error = f"Previous attempt failed: {responses[-1].get('error', 'Unknown error')}"
-                    messages.append(last_error)
+                    # messages.append(last_error)
+                    messages = messages.copy() + [last_error]
                     llm_input[1] = ("user", llm_input[1][1] + f"\n\nPREVIOUS ERROR: {last_error}\nPlease correct the issue and try again.")
                 
                 # Increment game turn for each LLM invocation attempt
@@ -756,7 +758,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     self.player_index, self.game.state.game_turn,
                     {
                         "available_fish": available_fish,
-                        "llm_input": str(llm_input) if llm_input else "Not available",
+                        "llm_input": str(llm_input.copy()) if llm_input else "Not available",
                         "attempt": attempt + 1,
                         "max_tries": max_tries
                     }
@@ -792,18 +794,18 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         final_error = responses[-1].get('error', 'Unknown error') if responses else 'No responses received'
         
         # Increment game turn for failed attempt
-        self.game.increment_game_turn()
+        # self.game.increment_game_turn()
         
-        self.game.add_history_entry_with_retry(self.player_index + 1, messages, responses[-1] if responses else {"content": "No response received"}, False, final_error
-        )
+        # self.game.add_history_entry_with_retry(self.player_index + 1, messages, responses[-1] if responses else {"content": "No response received"}, False, final_error
+        # )
         
         # Final save after all attempts failed if save callback provided
-        if save_callback:
-            try:
-                save_callback()
-                self._debug_log(f"Sequential save completed for final failure after {max_tries} attempts")
-            except Exception as save_error:
-                self._debug_log(f"Failed to save after final failure: {save_error}")
+        # if save_callback:
+        #     try:
+        #         save_callback()
+        #         self._debug_log(f"Sequential save completed for final failure after {max_tries} attempts")
+        #     except Exception as save_error:
+        #         self._debug_log(f"Failed to save after final failure: {save_error}")
         
         action = GameAction("select_team", False, f"Failed after {max_tries} attempts: {final_error}", "invalid action")
         action.captured_response = responses[-1].get('content', '') if responses else ''
@@ -1303,45 +1305,8 @@ class OllamaGameManager:
         error_context = {"error": {"message": str(error)}}  # Default fallback
         
         try:
-            # Ensure game_turn is incremented (KEY REQUIREMENT #3)
-            if hasattr(game, 'increment_game_turn'):
-                game.increment_game_turn()
-            elif hasattr(game.state, 'game_turn'):
-                game.state.game_turn += 1
-            
-            # Create detailed error context
-            error_context = ErrorHandlingRegistry.create_error_context(
-                error, operation, 1, -1, game.state.game_turn,
-                {
-                    "round_num": round_num,
-                    "player1": player1.name,
-                    "player2": player2.name,
-                    "game_phase": getattr(game.state, 'phase', 'unknown'),
-                    "master_error_handler": True
-                }
-            )
-            
-            # Ensure error is captured in history (KEY REQUIREMENT #2)
-            try:
-                if hasattr(game, 'add_history_entry_with_retry'):
-                    game.add_history_entry_with_retry(
-                        1,  # Use player 1 for system errors (1-based indexing)
-                        [("system", f"Master error handler: {operation}")],
-                        {"error": error_context["error"], "context": error_context},
-                        False,
-                        f"Critical error in {operation}: {error_context['error']['message']}"
-                    )
-                elif hasattr(game, 'history'):
-                    game.history.append({
-                        "operation": operation,
-                        "error": error_context["error"],
-                        "context": error_context,
-                        "master_handler": True,
-                        "game_turn": game.state.game_turn
-                    })
-            except Exception as history_error:
-                self._debug_log(f"Failed to save error to history: {history_error}")
-                # Continue anyway to ensure pickle files are saved
+            # Master error handler should ONLY change game status to "error"
+            # All turn increments and history entries are handled by the normal retry flow
             
             # Set game status to error (KEY REQUIREMENT #6)
             if hasattr(game, '_update_evaluation_game_status'):
@@ -1368,7 +1333,6 @@ class OllamaGameManager:
         return {
             "success": False,
             "error": f"Critical error in {operation}: {str(error)}",
-            "error_context": error_context,
             "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
         }
     
@@ -1850,6 +1814,9 @@ class OllamaGameManager:
                 "timestamp": time.time()
             }
             
+            # Debug player indexing in history (Issue 2)
+            self._debug_log(f"[HISTORY DEBUG] Writing history entry with player: {history_entry['player']} (from turn_context player_idx: {turn_context['player_idx']})")
+            
             # Add to game history
             game.history.append(history_entry)
             
@@ -2034,6 +2001,20 @@ class OllamaGameManager:
                 current_player_idx = game.state.current_player - 1  # Convert 1/2 to 0/1
                 current_player = players[current_player_idx]
                 
+                # Debug prints for player indexing investigation (Issue 2)
+                self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
+                self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
+                self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
+                if hasattr(current_player, 'player_index'):
+                    self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
+                
+                # Debug prints for player indexing investigation (Issue 2) 
+                self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
+                self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
+                self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
+                if hasattr(current_player, 'player_index'):
+                    self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
+                
                 print(f"\nGame Turn {game_turn}: {current_player.name}'s turn (Player Turn {game.state.player_turn})")
                 print(f"Phase: {game.state.phase}")
                 
@@ -2070,7 +2051,6 @@ class OllamaGameManager:
                         "success": False,
                         "error": None
                     }
-                    
                     self._debug_log(f"Attempt {attempt + 1}/{self.max_tries}")
                     
                     try:
