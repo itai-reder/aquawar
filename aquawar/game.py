@@ -836,27 +836,7 @@ All fish: 400 HP, 100 ATK base
         self._debug_log(f"Adding history entry: {history_entry} ({len(self.history)} -> {len(self.history) + 1})")
         self.history.append(history_entry)
 
-    # OLD FUNCTION - COMMENTED OUT FOR COMPARISON
-    # def add_history_entry_with_retry(self, player: int, input_messages: List[Any], response: Dict[str, Any], 
-    #                                valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0) -> None:
-    #     """Add history entry with retry information for failed attempts."""
-    #     
-    #     # Track invalid moves in evaluation if move was invalid
-    #     if not valid:
-    #         self._track_invalid_move_from_move_description(player - 1, move)
-    #     
-    #     self.history.append({
-    #         "player": player + 1,  # 1 or 2 - BUG: DOUBLE INCREMENT!
-    #         "game_turn": self.state.game_turn,
-    #         "player_turn": self.state.player_turn,
-    #         "input_messages": input_messages,  # All prompts and retry messages - BUG: SHARED OBJECT MUTATION!
-    #         "response": response,  # Raw LLM response object
-    #         "valid": valid,
-    #         "move": move,
-    #         "damage_dealt": damage_dealt,
-    #         "damage_taken": damage_taken
-    #     })
-    
+
     def _track_invalid_move_from_move_description(self, player_idx: int, move_description: str) -> None:
         """Classify and track invalid move based on move description."""
         # Classify the invalid move type based on common error patterns
