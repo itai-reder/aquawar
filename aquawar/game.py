@@ -361,9 +361,7 @@ All fish: 400 HP, 100 ATK base
         lines.append("  ACT <your_fish_index> ACTIVE [<target_index>]  - Use active skill")
         return "\n".join(lines)
 
-    def prompt_for_player(self, player_idx: int) -> str:
-        """Legacy prompt - use the new phase-specific prompts instead."""
-        return self.prompt_for_assertion(player_idx)
+
 
     # ------------------------------------------------------------------
     # Core gameplay turns
@@ -772,32 +770,6 @@ All fish: 400 HP, 100 ATK base
         """Track damage taken by the current player this turn."""
         self.current_turn_damage["taken"] += amount
     
-    def add_history_entry(self, player: int, prompt: str, response: str, validity: str = "valid") -> None:
-        """Legacy history entry method - will be replaced with new unified structure."""
-        # Convert to new format
-        valid = validity == "valid"
-        move = response if valid else validity
-        
-        # Track invalid moves in evaluation if move was invalid  
-        if not valid:
-            self._track_invalid_move_from_move_description(player, validity)
-        
-        # Get damage for this turn
-        damage_dealt = self.current_turn_damage["dealt"]
-        damage_taken = self.current_turn_damage["taken"]
-        
-        # New unified structure
-        self.history.append({
-            "player": player + 1,  # 1 or 2
-            "game_turn": self.state.game_turn,
-            "player_turn": self.state.player_turn,
-            "input_messages": [prompt],
-            "response": {"content": response},
-            "valid": valid,
-            "move": move,
-            "damage_dealt": damage_dealt,
-            "damage_taken": damage_taken
-        })
     
     def add_history_entry_unified(self, player_index: int, input_messages: List[Any], response: Dict[str, Any], 
                                  valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0, 

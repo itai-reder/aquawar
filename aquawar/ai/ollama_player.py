@@ -37,7 +37,6 @@ from pydantic import BaseModel, Field
 
 from ..game import Game, FISH_NAMES
 from ..persistent import PersistentGameManager
-from ..config import GameConfig
 from .base_player import BasePlayer, GameAction
 
 
@@ -524,22 +523,6 @@ Play to win!"""
             error_message = context.get("error", {}).get("message", "Unknown error")
             player_idx = context.get("player_idx", 0)
             
-            # OLD: Use the game's add_history_entry_with_retry method
-            # OLD: self.game.add_history_entry_unified(
-            #     player_idx + 1,  # Convert 0-based to 1-based for game.py compatibility
-            #     [("system", f"Error in {context.get('operation', 'unknown')}")],  # input_messages
-            #     {"error": context.get("error", {}), "context": context},  # response dict
-            #     False,  # valid = False since this is an error
-            #     f"Error: {error_message}"  # move description
-            # )
-            # NEW: Use the unified history function
-            # OLD: self.game.add_history_entry_with_retry(
-            # OLD: player_idx,  # Use 0-based player index (no +1)
-            # OLD: [("system", f"Error in {context.get('operation', 'unknown')}")],  # input_messages
-            # OLD: {"error": context.get("error", {}), "context": context},  # response dict
-            # OLD: False,  # valid = False since this is an error
-            # OLD: f"Error: {error_message}"  # move description
-            # NEW: Use unified history function with 0-based player index
             self.game.add_history_entry_unified(
                 player_idx,  # Use 0-based player index (no +1)
                 [("system", f"Error in {context.get('operation', 'unknown')}")],  # input_messages
@@ -594,7 +577,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 # Add previous error information for retry attempts
                 if attempt > 0 and responses:
                     last_error = f"Previous attempt failed: {responses[-1].get('error', 'Unknown error')}"
-                    # messages.append(last_error)
                     messages = messages.copy() + [last_error]
                     llm_input[1] = ("user", llm_input[1][1] + f"\n\nPREVIOUS ERROR: {last_error}\nPlease correct the issue and try again.")
                 
@@ -610,9 +592,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     response_dict["error"] = "No tool call made"
                     # Add history entry for validation error
                     try:
-                        # OLD: self.game.add_history_entry_with_retry(
-                        # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                        # NEW: Use unified history function with 0-based player index
                         self.game.add_history_entry_unified(
                             self.player_index, messages, response_dict, False, response_dict["error"]
                         )
@@ -633,9 +612,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     response_dict["error"] = f"Wrong tool called: {tool_call['name']}"
                     # Add history entry for tool validation error
                     try:
-                        # OLD: self.game.add_history_entry_with_retry(
-                        # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                        # NEW: Use unified history function with 0-based player index
                         self.game.add_history_entry_unified(
                             self.player_index, messages, response_dict, False, response_dict["error"]
                         )
@@ -667,9 +643,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         response_dict["error"] = f"Invalid fish indices format: {fish_indices_str}"
                         # Add history entry for validation error
                         try:
-                            # OLD: self.game.add_history_entry_with_retry(
-                            # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                            # NEW: Use unified history function with 0-based player index
                             self.game.add_history_entry_unified(
                                 self.player_index, messages, response_dict, False, response_dict["error"]
                             )
@@ -699,9 +672,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     response_dict["error"] = "Must select exactly 4 fish"
                     # Add history entry for validation error
                     try:
-                        # OLD: self.game.add_history_entry_with_retry(
-                        # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                        # NEW: Use unified history function with 0-based player index
                         self.game.add_history_entry_unified(
                             self.player_index, messages, response_dict, False, response_dict["error"]
                         )
@@ -723,9 +693,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         response_dict["error"] = f"Invalid fish index: {idx}"
                         # Add history entry for validation error
                         try:
-                            # OLD: self.game.add_history_entry_with_retry(
-                            # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                            # NEW: Use unified history function with 0-based player index
                             self.game.add_history_entry_unified(
                                 self.player_index, messages, response_dict, False, response_dict["error"]
                             )
@@ -750,9 +717,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     response_dict["error"] = "Mimic Fish selected but no mimic choice provided"
                     # Add history entry for validation error
                     try:
-                        # OLD: self.game.add_history_entry_with_retry(
-                        # OLD: self.player_index, messages, response_dict, False, response_dict["error"]
-                        # NEW: Use unified history function with 0-based player index
                         self.game.add_history_entry_unified(
                             self.player_index, messages, response_dict, False, response_dict["error"]
                         )
@@ -779,8 +743,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 # Get the latest response for history
                 latest_response = responses[-1] if responses else {"content": "No response data"}
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, latest_response, True, response_text
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, latest_response, True, response_text
                 )
                 
@@ -828,20 +790,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         # All attempts failed - save failure to history and return error
         final_error = responses[-1].get('error', 'Unknown error') if responses else 'No responses received'
         
-        # Increment game turn for failed attempt
-        # self.game.increment_game_turn()
-        
-        # self.game.add_history_entry_unified(self.player_index, messages, responses[-1] if responses else {"content": "No response received"}, False, final_error
-        # )
-        
-        # Final save after all attempts failed if save callback provided
-        # if save_callback:
-        #     try:
-        #         save_callback()
-        #         self._debug_log(f"Sequential save completed for final failure after {max_tries} attempts")
-        #     except Exception as save_error:
-        #         self._debug_log(f"Failed to save after final failure: {save_error}")
-        
         action = GameAction("select_team", False, f"Failed after {max_tries} attempts: {final_error}", "invalid action")
         action.captured_response = responses[-1].get('content', '') if responses else ''
         return action
@@ -871,8 +819,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             tool_call = self._extract_tool_call(response)
             if not tool_call:
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, "No tool call made"
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, "No tool call made"
                 )
                 action = GameAction("assertion", False, "No tool call made", "invalid response")
@@ -883,8 +829,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             if tool_name == 'skip_assertion_tool':
                 result = self.game.skip_assertion(self.player_index)
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, "SKIP"
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, True, "SKIP"
                 )
                 return GameAction("assertion", True, result, "valid")
@@ -895,8 +839,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if enemy_index is None or fish_name is None:
                     error_msg = "Missing assertion parameters"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("assertion", False, error_msg, "invalid argument")
@@ -907,8 +849,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     enemy_index = int(enemy_index)
                 except (ValueError, TypeError):
                     error_msg = f"Invalid enemy_index type: {enemy_index}"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("assertion", False, error_msg, "invalid argument")
@@ -916,16 +856,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
                 response_text = f"ASSERT {enemy_index} {fish_name}"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, True, response_text
                 )
                 return GameAction("assertion", True, result, "valid")
                 
             else:
                 error_msg = f"Wrong tool called: {tool_name}"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                 )
                 action = GameAction("assertion", False, error_msg, "invalid response")
@@ -944,8 +880,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             response_dict = {"content": f"OLLAMA SERVER ERROR - No LLM response received:\n{json.dumps(error_details, indent=2)}"}
             
             error_msg = f"Error in assertion: {e}"
-            # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-            # NEW: Use unified history function with 0-based player index
             self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
             )
             action = GameAction("assertion", False, error_msg, "invalid action")
@@ -959,7 +893,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         """
         self._debug_log(f"Making action decision:")
         self._debug_log(f"Player index: {self.player_index}")
-        # self._debug_log(f"Game ID: {self.game}")
         if not self.game or self.player_index is None:
             self._debug_log("No game context set for action")
             return GameAction("action", False, "No game context set", "invalid action")
@@ -999,8 +932,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             if not tool_call:
                 error_msg = "No tool call made"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                 )
                 action = GameAction("action", False, error_msg, "invalid response")
@@ -1019,8 +950,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if fish_index is None or target_index is None:
                     error_msg = "Missing attack parameters"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
@@ -1035,8 +964,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 except (ValueError, TypeError) as e:
                     self._debug_log(f"Parameter conversion failed: {e}")
                     error_msg = f"Invalid parameter types: fish_index={fish_index}, target_index={target_index}"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
@@ -1050,8 +977,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     self._debug_log(f"ERROR in perform_action: {e} (type: {type(e).__name__})")
                     raise
                 response_text = f"ACT {fish_index} NORMAL {target_index}"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, True, response_text
                 )
                 return GameAction("action", True, result, "valid")
@@ -1064,8 +989,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if fish_index is None:
                     error_msg = "Missing fish index for active skill"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
@@ -1084,8 +1007,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 except (ValueError, TypeError) as e:
                     self._debug_log(f"Active skill parameter conversion failed: {e}")
                     error_msg = f"Invalid parameter types: fish_index={fish_index}, target_index={target_index}"
-                    # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                    # NEW: Use unified history function with 0-based player index
                     self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
@@ -1101,16 +1022,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 response_text = f"ACT {fish_index} ACTIVE"
                 if target_index is not None:
                     response_text += f" {target_index}"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, True, response_text
                 )
                 return GameAction("action", True, result, "valid")
                 
             else:
                 error_msg = f"Wrong tool called: {tool_name}"
-                # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-                # NEW: Use unified history function with 0-based player index
                 self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
                 )
                 action = GameAction("action", False, error_msg, "invalid response")
@@ -1131,8 +1048,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             response_dict = {"content": f"OLLAMA SERVER ERROR - No LLM response received:\n{json.dumps(error_details, indent=2)}"}
             
             error_msg = f"Error in action: {e}"
-            # OLD: self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
-            # NEW: Use unified history function with 0-based player index
             self.game.add_history_entry_unified(self.player_index, messages, response_dict, False, error_msg
             )
             action = GameAction("action", False, error_msg, "invalid action")
@@ -2165,7 +2080,6 @@ class OllamaGameManager:
                         turn_context["success"] = False
                         
                         # Document failed attempt with full context
-                        # OLD SAFELY: self._add_history_entry_safely(game, turn_context)
                         # NEW: Using unified history function called directly in business logic
                         
                         # Process error for retry logic
