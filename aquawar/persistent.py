@@ -9,12 +9,9 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any
 
 from .game import Game, FISH_NAMES
-
-if TYPE_CHECKING:
-    from .config import GameConfig
 
 
 class PersistentGameManager:
@@ -32,30 +29,32 @@ class PersistentGameManager:
             i += 1
         return f"game_{i}"
     
-    def get_game_dir(self, game_id: str) -> Path:
-        """Get the directory for a specific game."""
-        return self.save_dir / game_id
+    def get_game_dir(self, player1_string: str, player2_string: str, round_num: int = 1) -> Path:
+        """Get the directory for a specific game using structure saves/{player1}/{player2}/round_001/."""
+        return self.save_dir / player1_string / player2_string / f"round_{round_num:03d}"
         
-    def get_save_path(self, game_id: str, turn: Optional[int] = None) -> Path:
-        """Get the save file path for a game."""
-        game_dir = self.get_game_dir(game_id)
-        game_dir.mkdir(exist_ok=True)
+    def get_save_path(self, player1_string: str, player2_string: str, round_num: int = 1, turn: Optional[int] = None) -> Path:
+        """Get the save file path for a game using new directory structure."""
+        game_dir = self.get_game_dir(player1_string, player2_string, round_num)
+        game_dir.mkdir(parents=True, exist_ok=True)
         if turn is not None:
             return game_dir / f"turn_{turn:03d}.pkl"
         return game_dir / "latest.pkl"
     
-    def save_game_state(self, game: Game, game_id: str, players_info: Optional[Dict[str, Any]] = None) -> str:
+    def save_game_state(self, game: Game, player1_string: str, player2_string: str, round_num: int = 1, players_info: Optional[Dict[str, Any]] = None) -> str:
         """Save game state and return the save file path.
         
         Args:
             game: Game instance to save
-            game_id: Game identifier
+            player1_string: Player 1 string identifier (e.g., 'llama3.1_8b_single')
+            player2_string: Player 2 string identifier (e.g., 'llama3.1_8b_single')
+            round_num: Round number (defaults to 1)
             players_info: Optional dictionary with player information in format:
                          {"1": [{"name": str, "model": str, "temperature": float, "top_p": float}],
                           "2": [{"name": str, "model": str, "temperature": float, "top_p": float}]}
         """
-        save_path = self.get_save_path(game_id, game.state.game_turn)
-        latest_path = self.get_save_path(game_id)
+        save_path = self.get_save_path(player1_string, player2_string, round_num, game.state.game_turn)
+        latest_path = self.get_save_path(player1_string, player2_string, round_num)
         
         game.save_game(str(save_path), players_info)
         game.save_game(str(latest_path), players_info)  # Also save as latest
@@ -63,22 +62,21 @@ class PersistentGameManager:
         return str(save_path)
     
 
-    
-    def load_game_state(self, game_id: str, turn: Optional[int] = None) -> Game:
+    def load_game_state(self, player1_string: str, player2_string: str, round_num: int = 1, turn: Optional[int] = None) -> Game:
         """Load game state from save file."""
         if turn is not None:
-            save_path = self.get_save_path(game_id, turn)
+            save_path = self.get_save_path(player1_string, player2_string, round_num, turn)
         else:
-            save_path = self.get_save_path(game_id)
+            save_path = self.get_save_path(player1_string, player2_string, round_num)
             
         if not save_path.exists():
             raise FileNotFoundError(f"Save file not found: {save_path}")
             
         return Game.load_game(str(save_path))
     
-    def list_saves(self, game_id: str) -> List[int]:
+    def list_saves(self, player1_string: str, player2_string: str, round_num: int = 1) -> List[int]:
         """List all available turn saves for a game."""
-        game_dir = self.get_game_dir(game_id)
+        game_dir = self.get_game_dir(player1_string, player2_string, round_num)
         if not game_dir.exists():
             return []
             
@@ -92,24 +90,24 @@ class PersistentGameManager:
                 continue
         return sorted(saves)
     
-    def initialize_new_game(self, game_id: str, player_names: tuple[str, str], config=None) -> Game:
-        """Initialize a new game and save it with configuration."""
-        game = Game(player_names, debug=self.debug)
+    def initialize_new_game(self, player1_string: str, player2_string: str, player_names: tuple[str, str], max_tries: int = 3, round_num: int = 1) -> Game:
+        """Initialize a new game and save it.
+        
+        Args:
+            player1_string: Player 1 string identifier (e.g., 'llama3.1_8b_single')
+            player2_string: Player 2 string identifier (e.g., 'llama3.1_8b_single')
+            player_names: Tuple of player names
+            max_tries: Maximum retry attempts for invalid moves
+            round_num: Round number (defaults to 1)
+        """
+        game = Game(player_names, debug=self.debug, max_tries=max_tries)
         
         # Create game directory
-        game_dir = self.get_game_dir(game_id)
-        game_dir.mkdir(exist_ok=True)
-        
-        # Save configuration
-        if config is None:
-            from .config import create_default_ollama_config
-            config = create_default_ollama_config()
-        
-        config_path = game_dir / "config.json"
-        config.save_to_file(config_path)
+        game_dir = self.get_game_dir(player1_string, player2_string, round_num)
+        game_dir.mkdir(parents=True, exist_ok=True)
         
         # Save initial game state
-        self.save_game_state(game, game_id)
+        self.save_game_state(game, player1_string, player2_string, round_num)
         return game
     
     def get_current_prompt(self, game: Game, requesting_player: Optional[int] = None) -> str:

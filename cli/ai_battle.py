@@ -55,13 +55,15 @@ Examples:
                        help="Maximum turns per game (default: %(default)s)")
     parser.add_argument("--max-tries", type=int, default=3,
                        help="Maximum retry attempts for failed moves (default: %(default)s)")
+    parser.add_argument("--rounds", type=int, metavar="N",
+                       help="Number of rounds to execute (default: run until first available round is completed)")
     
     # Tournament mode
     parser.add_argument("--tournament", type=int, metavar="N",
                        help="Run N games and collect statistics")
     
     # Output configuration
-    parser.add_argument("--save-dir", default="saves/ai_battles",
+    parser.add_argument("--save-dir", default="saves",
                        help="Directory for saving games (default: %(default)s)")
     parser.add_argument("--game-id", default="ai_battle",
                        help="Base game ID (will be auto-indexed) (default: %(default)s)")
@@ -126,30 +128,38 @@ def validate_models(player1_model: str, player2_model: str, verbose: bool = Fals
         return False
 
 
-def run_single_game(game_manager, game_id: str, player1_name: str, player2_name: str, 
-                   max_turns: int, verbose: bool = False) -> Dict[str, Any]:
+def run_single_game(game_manager, player1_name: str, player2_name: str, 
+                   max_turns: int, player1_model: str, player2_model: str, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
     """Run a single AI vs AI game.
     
     Args:
         game_manager: OllamaGameManager instance
-        game_id: Unique game identifier
         player1_name: Name for player 1
         player2_name: Name for player 2
         max_turns: Maximum turns per game
+        player1_model: Model for player 1
+        player2_model: Model for player 2
         verbose: Whether to print detailed progress
+        rounds: Number of rounds to execute (None = find first available)
         
     Returns:
         Dictionary with game results
     """
     if verbose:
+        # players, max turns, rounds
         print(f"🎮 Starting game: {player1_name} vs {player2_name}")
-    
+        print(f"⏳ Max turns: {max_turns}")
+        print(f"🔄 Rounds: {rounds if rounds is not None else 'All available'}")
+
     start_time = time.time()
     
     result = game_manager.run_ai_vs_ai_game(
-        game_id=game_id,
+        player1_name=player1_name,
+        player2_name=player2_name,
         max_turns=max_turns,
-        auto_index=True  # Automatically create indexed save directory
+        player1_model=player1_model,
+        player2_model=player2_model,
+        rounds=rounds
     )
     
     end_time = time.time()
@@ -158,15 +168,16 @@ def run_single_game(game_manager, game_id: str, player1_name: str, player2_name:
     return result
 
 
-def run_tournament(game_manager, base_game_id: str, player1_name: str, player2_name: str,
+def run_tournament(game_manager, player1_name: str, player2_name: str, player1_model: str, player2_model: str,
                   num_games: int, max_turns: int, verbose: bool = False, quiet: bool = False) -> Dict[str, Any]:
     """Run a tournament of multiple games.
     
     Args:
         game_manager: OllamaGameManager instance
-        base_game_id: Base game identifier
         player1_name: Name for player 1
         player2_name: Name for player 2
+        player1_model: Model for player 1
+        player2_model: Model for player 2
         num_games: Number of games to play
         max_turns: Maximum turns per game
         verbose: Whether to print detailed progress
@@ -190,10 +201,8 @@ def run_tournament(game_manager, base_game_id: str, player1_name: str, player2_n
         if not quiet:
             print(f"\n--- Game {game_num}/{num_games} ---")
         
-        game_id = f"{base_game_id}_tournament_g{game_num:03d}"
-        
         result = run_single_game(
-            game_manager, game_id, player1_name, player2_name, max_turns, verbose
+            game_manager, player1_name, player2_name, max_turns, player1_model, player2_model, verbose, None  # Always None for tournament mode
         )
         
         results.append(result)
@@ -306,15 +315,20 @@ def main():
             print("Make sure the reorganization is complete or run from project root")
             return 1
     
-    # Initialize game manager with player 1's model as default
-    # TODO: Support different models for each player in game manager
-    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug)
+    # Initialize game manager 
+    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
     
     try:
         if args.tournament:
             # Tournament mode
+            if args.verbose:
+                print(f"🏆 Running tournament: {args.tournament} games")
+                print(f"🤖 Players: {args.player1_name} vs {args.player2_name}")
+                print(f"🧠 Models: {player1_model} vs {player2_model}")
+                print(f"🎯 Objective: Play until one player loses all fish")
+                print("\n🚀 Starting tournament...")
             stats = run_tournament(
-                game_manager, args.game_id, args.player1_name, args.player2_name,
+                game_manager, args.player1_name, args.player2_name, player1_model, player2_model,
                 args.tournament, args.max_turns, args.verbose, args.quiet
             )
             
@@ -333,8 +347,8 @@ def main():
                 print("\n🚀 Starting game...")
             
             result = run_single_game(
-                game_manager, args.game_id, args.player1_name, args.player2_name,
-                args.max_turns, args.verbose
+                game_manager, args.player1_name, args.player2_name,
+                args.max_turns, player1_model, player2_model, args.verbose, args.rounds
             )
             
             # Print results
@@ -349,32 +363,10 @@ def main():
                 print(f"🎉 Winner: {winner_name} ({winner_model})")
                 print(f"📊 Total turns: {result['turns']}")
                 print(f"⏱️ Duration: {result['duration']:.1f} seconds")
-                print(f"💾 Game saved as: {result['game_id']}")
+                print(f"💾 Game saved to: {result['save_path']}")
                 
-                # Load final game state to show final stats (if possible)
-                try:
-                    # Try new location first, fallback to old
-                    try:
-                        from aquawar.persistent import PersistentGameManager
-                    except ImportError:
-                        from core.persistent_game import PersistentGameManager
-                    
-                    pm = PersistentGameManager(args.save_dir)
-                    final_game = pm.load_game_state(result['game_id'])
-                    
-                    print("\n📈 Final Statistics:")
-                    for i, player in enumerate(final_game.state.players):
-                        if player.team:
-                            living = len(player.team.living_fish())
-                            total_hp = sum(f.hp for f in player.team.fish if f.is_alive())
-                            damage_dealt = player.damage_dealt
-                            print(f"  {player.name}: {living}/4 fish, {total_hp} HP, {damage_dealt} damage dealt")
-                    
-                    print(f"\n📝 Total history entries: {len(final_game.history)}")
-                    
-                except Exception as e:
-                    if args.verbose:
-                        print(f"⚠️ Could not load final stats: {e}")
+                if args.verbose:
+                    print(f"📝 Full save directory: {Path(args.save_dir) / result['save_path']}")
                 
                 print("\n✅ Battle completed successfully!")
                 return 0
@@ -382,6 +374,8 @@ def main():
                 print(f"❌ Game failed: {result['error']}")
                 print(f"📊 Turns completed: {result.get('turns', 0)}")
                 print(f"⏱️ Duration: {result['duration']:.1f} seconds")
+                if 'save_path' in result:
+                    print(f"💾 Partial save at: {result['save_path']}")
                 print("\n❌ Battle failed!")
                 return 1
                 

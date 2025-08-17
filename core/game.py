@@ -60,6 +60,7 @@ class GameState:
     player_turn: int = 1  # Increments when both players complete assertion+action phases
     phase: str = "assertion"  # "assertion" or "action"
     current_player: int = 1  # Who needs to make a move right now (1 or 2)
+    max_tries: int = 3  # Maximum retry attempts for invalid moves
 
     def team_of(self, fish: Fish) -> Team:
         for p in self.players:
@@ -92,8 +93,8 @@ class Game:
     history: List[Dict[str, Any]]  # Track turn metadata
     current_turn_damage: Dict[str, int]  # Track damage for current turn
     
-    def __init__(self, player_names: Tuple[str, str]):
-        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])])
+    def __init__(self, player_names: Tuple[str, str], max_tries: int = 3):
+        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])], max_tries=max_tries)
         self.state.current_player = 1  # Player 1 starts first
         self.history = []  # List[Dict] to track turn metadata
         self.current_turn_damage = {"dealt": 0, "taken": 0}  # Track damage for current turn
@@ -503,7 +504,8 @@ All fish: 400 HP, 100 ATK base
             'game_turn': self.state.game_turn,
             'player_turn': self.state.player_turn,
             'phase': self.state.phase,
-            'current_player': self.state.current_player
+            'current_player': self.state.current_player,
+            'max_tries': self.state.max_tries
         }
     
     def _serialize_team(self, team: Team) -> Dict[str, Any]:
@@ -582,7 +584,8 @@ All fish: 400 HP, 100 ATK base
             game_turn=state_data['game_turn'],
             player_turn=state_data.get('player_turn', 1),
             phase=state_data.get('phase', 'assertion'),  # Default to assertion for backward compatibility
-            current_player=state_data.get('current_player', 1)  # Default to player 1 for backward compatibility
+            current_player=state_data.get('current_player', 1),  # Default to player 1 for backward compatibility
+            max_tries=state_data.get('max_tries', 3)  # Default to 3 for backward compatibility
         )
 
     # ------------------------------------------------------------------

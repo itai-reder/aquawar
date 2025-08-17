@@ -222,6 +222,16 @@ class OllamaPlayer:
         # Game context
         self.game: Optional[Game] = None
         self.player_index: Optional[int] = None
+    
+    @property
+    def player_string(self) -> str:
+        """Generate player string for directory naming.
+        
+        Converts model format like 'llama3.1:8b' to 'llama3.1_8b_single'
+        to prepare for future multi-agent support like 'llama3.1_8b_majority_5'.
+        """
+        # Replace colons with underscores and add agent type suffix
+        return self.model.replace(":", "_") + "_single"
         
     def set_game_context(self, game: Game, player_index: int):
         """Set the game context for this player.

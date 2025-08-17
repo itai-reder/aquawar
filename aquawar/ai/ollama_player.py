@@ -1,10 +1,33 @@
-"""Ollama AI player implementation for Aquawar using Langchain."""
+"""
+Ollama AI player implementation for Aquawar using Langchain.
+
+KEY REQUIREMENTS - Comprehensive Error Capture & Round Logic:
+=============================================================
+1. ALWAYS save turn_{i}.pkl - no exceptions
+2. ALWAYS save error details in history entry 
+3. ALWAYS increment game_turn (even for failures)
+4. ALWAYS update latest.pkl = copy of turn_{i}.pkl
+5. ALWAYS respect max_tries before changing game status from "ongoing"
+6. Final status for terminated games: "error" (not "completed")
+
+Default Mode Logic:
+- Find first round that needs work (ongoing, missing, or corrupted)
+- Attempt that ONE round only, then stop regardless of outcome
+- On failure: set game_status to "error" (not "ongoing" or "completed")
+
+Error Handling Architecture:
+- Hybrid approach with master wrapper + granular handlers
+- Master wrapper guarantees pickle/history creation on EVERY exit path
+- Granular handlers provide detailed context for specific error types
+- ErrorHandlingRegistry tracks all error handling locations
+"""
 
 from __future__ import annotations
 
 import json
 import time
-from typing import List, Optional, Any, Dict, Union, Tuple
+import traceback
+from typing import List, Optional, Any, Dict, Union, Tuple, Callable
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -16,6 +39,63 @@ from ..game import Game, FISH_NAMES
 from ..persistent import PersistentGameManager
 from ..config import GameConfig
 from .base_player import BasePlayer, GameAction
+
+
+class ErrorHandlingRegistry:
+    """
+    Central registry for tracking all error handling locations and ensuring consistency.
+    
+    This registry implements the KEY REQUIREMENTS for comprehensive error capture:
+    - Tracks all error handlers across the codebase
+    - Ensures standardized error context format
+    - Provides consistent error handler interface
+    """
+    
+    ERROR_HANDLERS = {
+        'llm_invocation': 'OllamaPlayer._handle_llm_invocation_error',
+        'response_parsing': 'OllamaPlayer._handle_response_parsing_error',
+        'tool_extraction': 'OllamaPlayer._handle_tool_extraction_error',
+        'team_selection': 'OllamaPlayer._handle_team_selection_error',
+        'game_action': 'OllamaPlayer._handle_game_action_error',
+        'assertion': 'OllamaPlayer._handle_assertion_error',
+        'master_wrapper': 'OllamaGameManager._handle_turn_execution_error'
+    }
+    
+    @staticmethod
+    def create_error_context(error: Exception, operation: str, attempt: int, 
+                           player_idx: int, game_turn: int, additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Create standardized error context for all error handlers.
+        
+        Args:
+            error: The exception that occurred
+            operation: Name of the operation that failed
+            attempt: Current attempt number
+            player_idx: Player index (0 or 1)
+            game_turn: Current game turn
+            additional_context: Additional context specific to the operation
+            
+        Returns:
+            Standardized error context dictionary
+        """
+        context = {
+            "operation": operation,
+            "attempt": attempt,
+            "player_idx": player_idx,
+            "game_turn": game_turn,
+            "error": {
+                "type": type(error).__name__,
+                "message": str(error),
+                "traceback": traceback.format_exc()
+            },
+            "timestamp": time.time(),
+            "success": False
+        }
+        
+        if additional_context:
+            context.update(additional_context)
+            
+        return context
 
 
 # Pydantic models for tool inputs
@@ -214,6 +294,16 @@ class OllamaPlayer(BasePlayer):
             temperature=temperature,
             top_p=top_p,
         ).bind_tools(tools)
+    
+    @property
+    def player_string(self) -> str:
+        """Generate player string for directory naming.
+        
+        Converts model format like 'llama3.1:8b' to 'llama3.1_8b_single'
+        to prepare for future multi-agent support like 'llama3.1_8b_majority_5'.
+        """
+        # Replace colons with underscores and add agent type suffix
+        return self.model.replace(":", "_") + "_single"
         
     def get_system_message(self) -> str:
         """Get system message for the LLM."""
@@ -308,8 +398,144 @@ Play to win!"""
             raise
         self._debug_log(f"_extract_tool_call: returning None")
         return None
+    
+    def _handle_llm_invocation_error(self, error: Exception, operation: str, attempt: int, 
+                                   player_idx: int, game_turn: int, 
+                                   additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during LLM invocation (server communication, timeouts, etc.)
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        context = ErrorHandlingRegistry.create_error_context(
+            error, f"llm_invocation_{operation}", attempt, player_idx, game_turn, 
+            additional_context
+        )
+        self._debug_log(f"LLM invocation error in {operation}: {error}")
+        return context
+    
+    def _handle_response_parsing_error(self, error: Exception, operation: str, attempt: int,
+                                     player_idx: int, game_turn: int, response: Any,
+                                     additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during response parsing (JSON parsing, format issues, etc.)
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        parsing_context = {
+            "response_type": str(type(response)),
+            "response_content": str(response)[:500] if response else "None"
+        }
+        if additional_context:
+            parsing_context.update(additional_context)
+            
+        context = ErrorHandlingRegistry.create_error_context(
+            error, f"response_parsing_{operation}", attempt, player_idx, game_turn,
+            parsing_context
+        )
+        self._debug_log(f"Response parsing error in {operation}: {error}")
+        return context
+    
+    def _handle_tool_extraction_error(self, error: Exception, operation: str, attempt: int,
+                                    player_idx: int, game_turn: int, response: Any,
+                                    additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during tool call extraction (missing tool calls, invalid format, etc.)
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        extraction_context = {
+            "response_type": str(type(response)),
+            "has_tool_calls_attr": hasattr(response, 'tool_calls'),
+            "full_response": self._capture_full_response(response)
+        }
+        if additional_context:
+            extraction_context.update(additional_context)
+            
+        context = ErrorHandlingRegistry.create_error_context(
+            error, f"tool_extraction_{operation}", attempt, player_idx, game_turn,
+            extraction_context
+        )
+        self._debug_log(f"Tool extraction error in {operation}: {error}")
+        return context
+    
+    def _handle_team_selection_error(self, error: Exception, attempt: int, player_idx: int, 
+                                   game_turn: int, available_fish: List[str],
+                                   additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during team selection process.
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        selection_context = {
+            "available_fish_count": len(available_fish),
+            "available_fish": available_fish
+        }
+        if additional_context:
+            selection_context.update(additional_context)
+            
+        context = ErrorHandlingRegistry.create_error_context(
+            error, "team_selection", attempt, player_idx, game_turn,
+            selection_context
+        )
+        self._debug_log(f"Team selection error: {error}")
+        return context
+    
+    def _handle_game_action_error(self, error: Exception, operation: str, attempt: int,
+                                player_idx: int, game_turn: int, phase: str,
+                                additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during game actions (attacks, skills, etc.)
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        action_context = {
+            "phase": phase,
+            "operation_type": operation
+        }
+        if additional_context:
+            action_context.update(additional_context)
+            
+        context = ErrorHandlingRegistry.create_error_context(
+            error, f"game_action_{operation}", attempt, player_idx, game_turn,
+            action_context
+        )
+        self._debug_log(f"Game action error in {operation}: {error}")
+        return context
+    
+    def _handle_assertion_error(self, error: Exception, attempt: int, player_idx: int,
+                               game_turn: int, additional_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Handle errors during assertion process.
+        Part of the comprehensive error capture system per KEY REQUIREMENTS.
+        """
+        context = ErrorHandlingRegistry.create_error_context(
+            error, "assertion", attempt, player_idx, game_turn, additional_context
+        )
+        self._debug_log(f"Assertion error: {error}")
+        return context
+    
+    def _create_fallback_history_entry(self, context: Dict[str, Any]) -> None:
+        """
+        Create a fallback history entry when normal history creation fails.
+        Ensures KEY REQUIREMENT: ALWAYS save error details in history entry.
+        """
+        if not self.game:
+            return
+            
+        try:
+            # Create a minimal history entry for the error using the correct method
+            error_message = context.get("error", {}).get("message", "Unknown error")
+            player_idx = context.get("player_idx", 0)
+            
+            # Use the game's add_history_entry_with_retry method
+            self.game.add_history_entry_with_retry(
+                player_idx + 1,  # Convert 0-based to 1-based for game.py compatibility
+                [("system", f"Error in {context.get('operation', 'unknown')}")],  # input_messages
+                {"error": context.get("error", {}), "context": context},  # response dict
+                False,  # valid = False since this is an error
+                f"Error: {error_message}"  # move description
+            )
+        except Exception as e:
+            self._debug_log(f"Failed to create fallback history entry: {e}")
+            # Even this failed - at least log it
 
-    def make_team_selection(self, available_fish: List[str], max_tries: int = 3) -> GameAction:
+    def make_team_selection(self, available_fish: List[str], max_tries: int = 3, save_callback: Optional[Callable[[], None]] = None) -> GameAction:
         """Make team selection using LLM tool calling with retry logic.
         
         Args:
@@ -327,6 +553,7 @@ Play to win!"""
         responses = []
         
         for attempt in range(max_tries):
+            llm_input = None  # Initialize to avoid unbound variable issues
             try:
                 llm_input = [
                     ("system", self.get_system_message()),
@@ -364,12 +591,40 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 tool_call = self._extract_tool_call(response)
                 if not tool_call:
                     response_dict["error"] = "No tool call made"
+                    # Add history entry for validation error
+                    try:
+                        self.game.add_history_entry_with_retry(
+                            self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                        )
+                    except Exception as hist_error:
+                        self._debug_log(f"Failed to add history for validation error: {hist_error}")
+                    # Save after validation error if save callback provided
+                    if save_callback:
+                        try:
+                            save_callback()
+                            self._debug_log(f"Sequential save completed for validation error - attempt {attempt + 1}")
+                        except Exception as save_error:
+                            self._debug_log(f"Failed to save after validation error - attempt {attempt + 1}: {save_error}")
                     if attempt == max_tries - 1:  # Last attempt
                         break
                     continue
                 
                 if tool_call['name'] not in ['select_team_tool', 'select_team_tool_gpt_oss']:
                     response_dict["error"] = f"Wrong tool called: {tool_call['name']}"
+                    # Add history entry for tool validation error
+                    try:
+                        self.game.add_history_entry_with_retry(
+                            self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                        )
+                    except Exception as hist_error:
+                        self._debug_log(f"Failed to add history for tool validation error: {hist_error}")
+                    # Save after tool validation error if save callback provided
+                    if save_callback:
+                        try:
+                            save_callback()
+                            self._debug_log(f"Sequential save completed for tool validation error - attempt {attempt + 1}")
+                        except Exception as save_error:
+                            self._debug_log(f"Failed to save after tool validation error - attempt {attempt + 1}: {save_error}")
                     if attempt == max_tries - 1:  # Last attempt
                         break
                     continue
@@ -387,6 +642,20 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         fish_indices = [int(x.strip()) for x in fish_indices_str.split(',') if x.strip()]
                     except (ValueError, TypeError):
                         response_dict["error"] = f"Invalid fish indices format: {fish_indices_str}"
+                        # Add history entry for validation error
+                        try:
+                            self.game.add_history_entry_with_retry(
+                                self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                            )
+                        except Exception as hist_error:
+                            self._debug_log(f"Failed to add history for validation error: {hist_error}")
+                        # Save after parsing error if save callback provided
+                        if save_callback:
+                            try:
+                                save_callback()
+                                self._debug_log(f"Sequential save completed for parsing error - attempt {attempt + 1}")
+                            except Exception as save_error:
+                                self._debug_log(f"Failed to save after parsing error - attempt {attempt + 1}: {save_error}")
                         if attempt == max_tries - 1:  # Last attempt
                             break
                         continue
@@ -402,6 +671,20 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 # Validate indices
                 if len(fish_indices) != 4:
                     response_dict["error"] = "Must select exactly 4 fish"
+                    # Add history entry for validation error
+                    try:
+                        self.game.add_history_entry_with_retry(
+                            self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                        )
+                    except Exception as hist_error:
+                        self._debug_log(f"Failed to add history for validation error: {hist_error}")
+                    # Save after count validation error if save callback provided
+                    if save_callback:
+                        try:
+                            save_callback()
+                            self._debug_log(f"Sequential save completed for count validation error - attempt {attempt + 1}")
+                        except Exception as save_error:
+                            self._debug_log(f"Failed to save after count validation error - attempt {attempt + 1}: {save_error}")
                     if attempt == max_tries - 1:  # Last attempt
                         break
                     continue
@@ -409,6 +692,20 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 for idx in fish_indices:
                     if not isinstance(idx, int) or idx < 0 or idx >= len(available_fish):
                         response_dict["error"] = f"Invalid fish index: {idx}"
+                        # Add history entry for validation error
+                        try:
+                            self.game.add_history_entry_with_retry(
+                                self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                            )
+                        except Exception as hist_error:
+                            self._debug_log(f"Failed to add history for validation error: {hist_error}")
+                        # Save after index validation error if save callback provided
+                        if save_callback:
+                            try:
+                                save_callback()
+                                self._debug_log(f"Sequential save completed for index validation error - attempt {attempt + 1}")
+                            except Exception as save_error:
+                                self._debug_log(f"Failed to save after index validation error - attempt {attempt + 1}: {save_error}")
                         if attempt == max_tries - 1:  # Last attempt
                             break
                         continue
@@ -419,6 +716,20 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 # Check for Mimic Fish
                 if "Mimic Fish" in fish_names and not mimic_choice:
                     response_dict["error"] = "Mimic Fish selected but no mimic choice provided"
+                    # Add history entry for validation error
+                    try:
+                        self.game.add_history_entry_with_retry(
+                            self.player_index + 1, messages, response_dict, False, response_dict["error"]
+                        )
+                    except Exception as hist_error:
+                        self._debug_log(f"Failed to add history for validation error: {hist_error}")
+                    # Save after mimic validation error if save callback provided
+                    if save_callback:
+                        try:
+                            save_callback()
+                            self._debug_log(f"Sequential save completed for mimic validation error - attempt {attempt + 1}")
+                        except Exception as save_error:
+                            self._debug_log(f"Failed to save after mimic validation error - attempt {attempt + 1}: {save_error}")
                     if attempt == max_tries - 1:  # Last attempt
                         break
                     continue
@@ -433,28 +744,46 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 # Get the latest response for history
                 latest_response = responses[-1] if responses else {"content": "No response data"}
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, latest_response, True, response_text
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, latest_response, True, response_text
                 )
                 
                 return GameAction("select_team", True, f"Selected team: {fish_names}", "valid")
                 
             except Exception as e:
-                # Capture detailed exception information for server errors
-                import traceback
-                error_details = {
-                    "exception_type": str(type(e).__name__),
-                    "exception_message": str(e),
-                    "full_traceback": traceback.format_exc(),
-                    "ollama_server_error": True,
-                    "no_llm_response_received": True
-                }
+                # Use comprehensive error handling system
+                error_context = self._handle_llm_invocation_error(
+                    e, "team_selection", attempt + 1, 
+                    self.player_index, self.game.state.game_turn,
+                    {
+                        "available_fish": available_fish,
+                        "llm_input": str(llm_input) if llm_input else "Not available",
+                        "attempt": attempt + 1,
+                        "max_tries": max_tries
+                    }
+                )
+                
+                # Create response entry with comprehensive error details
                 response_dict = {
                     "attempt": attempt + 1,
-                    "content": f"OLLAMA SERVER ERROR - No LLM response received:\n{json.dumps(error_details, indent=2)}",
-                    "error": f"Server error: {e}"
+                    "content": f"COMPREHENSIVE ERROR CAPTURE:\n{json.dumps(error_context, indent=2)}",
+                    "error": f"Error: {error_context['error']['message']}",
+                    "error_context": error_context
                 }
                 responses.append(response_dict)
+                
+                # Create fallback history entry to ensure error is always captured
+                try:
+                    self._create_fallback_history_entry(error_context)
+                except Exception as fallback_error:
+                    self._debug_log(f"Failed to create fallback history entry: {fallback_error}")
+                
+                # Save after each failed attempt if save callback provided
+                if save_callback:
+                    try:
+                        save_callback()
+                        self._debug_log(f"Sequential save completed for failed attempt {attempt + 1}")
+                    except Exception as save_error:
+                        self._debug_log(f"Failed to save after failed attempt {attempt + 1}: {save_error}")
                 
                 if attempt == max_tries - 1:  # Last attempt
                     break
@@ -465,9 +794,16 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         # Increment game turn for failed attempt
         self.game.increment_game_turn()
         
-        self.game.add_history_entry_with_retry(
-            self.player_index, messages, responses[-1] if responses else {"content": "No response received"}, False, final_error
+        self.game.add_history_entry_with_retry(self.player_index + 1, messages, responses[-1] if responses else {"content": "No response received"}, False, final_error
         )
+        
+        # Final save after all attempts failed if save callback provided
+        if save_callback:
+            try:
+                save_callback()
+                self._debug_log(f"Sequential save completed for final failure after {max_tries} attempts")
+            except Exception as save_error:
+                self._debug_log(f"Failed to save after final failure: {save_error}")
         
         action = GameAction("select_team", False, f"Failed after {max_tries} attempts: {final_error}", "invalid action")
         action.captured_response = responses[-1].get('content', '') if responses else ''
@@ -498,8 +834,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             tool_call = self._extract_tool_call(response)
             if not tool_call:
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, False, "No tool call made"
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, "No tool call made"
                 )
                 action = GameAction("assertion", False, "No tool call made", "invalid response")
                 return action
@@ -509,8 +844,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             if tool_name == 'skip_assertion_tool':
                 result = self.game.skip_assertion(self.player_index)
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, True, "SKIP"
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, "SKIP"
                 )
                 return GameAction("assertion", True, result, "valid")
                 
@@ -520,8 +854,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if enemy_index is None or fish_name is None:
                     error_msg = "Missing assertion parameters"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("assertion", False, error_msg, "invalid argument")
                     return action
@@ -531,23 +864,20 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     enemy_index = int(enemy_index)
                 except (ValueError, TypeError):
                     error_msg = f"Invalid enemy_index type: {enemy_index}"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("assertion", False, error_msg, "invalid argument")
                     return action
                 
                 result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
                 response_text = f"ASSERT {enemy_index} {fish_name}"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, True, response_text
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
                 )
                 return GameAction("assertion", True, result, "valid")
                 
             else:
                 error_msg = f"Wrong tool called: {tool_name}"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, False, error_msg
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                 )
                 action = GameAction("assertion", False, error_msg, "invalid response")
                 return action
@@ -565,8 +895,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             response_dict = {"content": f"OLLAMA SERVER ERROR - No LLM response received:\n{json.dumps(error_details, indent=2)}"}
             
             error_msg = f"Error in assertion: {e}"
-            self.game.add_history_entry_with_retry(
-                self.player_index, messages, response_dict, False, error_msg
+            self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
             )
             action = GameAction("assertion", False, error_msg, "invalid action")
             return action
@@ -619,8 +948,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             
             if not tool_call:
                 error_msg = "No tool call made"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, False, error_msg
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                 )
                 action = GameAction("action", False, error_msg, "invalid response")
                 return action
@@ -638,8 +966,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if fish_index is None or target_index is None:
                     error_msg = "Missing attack parameters"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
                     return action
@@ -653,8 +980,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 except (ValueError, TypeError) as e:
                     self._debug_log(f"Parameter conversion failed: {e}")
                     error_msg = f"Invalid parameter types: fish_index={fish_index}, target_index={target_index}"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
                     return action
@@ -667,8 +993,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     self._debug_log(f"ERROR in perform_action: {e} (type: {type(e).__name__})")
                     raise
                 response_text = f"ACT {fish_index} NORMAL {target_index}"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, True, response_text
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
                 )
                 return GameAction("action", True, result, "valid")
                 
@@ -680,8 +1005,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 
                 if fish_index is None:
                     error_msg = "Missing fish index for active skill"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
                     return action
@@ -699,8 +1023,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 except (ValueError, TypeError) as e:
                     self._debug_log(f"Active skill parameter conversion failed: {e}")
                     error_msg = f"Invalid parameter types: fish_index={fish_index}, target_index={target_index}"
-                    self.game.add_history_entry_with_retry(
-                        self.player_index, messages, response_dict, False, error_msg
+                    self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                     )
                     action = GameAction("action", False, error_msg, "invalid argument")
                     return action
@@ -715,15 +1038,13 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 response_text = f"ACT {fish_index} ACTIVE"
                 if target_index is not None:
                     response_text += f" {target_index}"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, True, response_text
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, True, response_text
                 )
                 return GameAction("action", True, result, "valid")
                 
             else:
                 error_msg = f"Wrong tool called: {tool_name}"
-                self.game.add_history_entry_with_retry(
-                    self.player_index, messages, response_dict, False, error_msg
+                self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
                 )
                 action = GameAction("action", False, error_msg, "invalid response")
                 return action
@@ -743,8 +1064,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             response_dict = {"content": f"OLLAMA SERVER ERROR - No LLM response received:\n{json.dumps(error_details, indent=2)}"}
             
             error_msg = f"Error in action: {e}"
-            self.game.add_history_entry_with_retry(
-                self.player_index, messages, response_dict, False, error_msg
+            self.game.add_history_entry_with_retry(self.player_index + 1, messages, response_dict, False, error_msg
             )
             action = GameAction("action", False, error_msg, "invalid action")
             return action
@@ -951,18 +1271,106 @@ class OllamaGameManager:
         if getattr(self, 'debug', False):
             print(f"[DEBUG] {message}")
     
-    def __init__(self, save_dir: str = "saves", model: str = "llama3.2:3b", debug: bool = False):
+    def __init__(self, save_dir: str = "saves", model: str = "llama3.2:3b", debug: bool = False, max_tries: int = 3):
         """Initialize the game manager.
         
         Args:
             save_dir: Directory for saving games
             model: Ollama model to use for both players
             debug: Enable detailed debug logging
+            max_tries: Maximum retry attempts for invalid moves
         """
         self.save_dir = save_dir
         self.persistent_manager = PersistentGameManager(save_dir, debug)
         self.model = model
         self.debug = debug
+        self.max_tries = max_tries
+    
+    def _handle_turn_execution_error(self, error: Exception, game: Game, 
+                                   player1: 'OllamaPlayer', player2: 'OllamaPlayer',
+                                   round_num: int, operation: str = "turn_execution") -> Dict[str, Any]:
+        """
+        Master error handler that ensures KEY REQUIREMENTS are always met.
+        GUARANTEES: 
+        1. ALWAYS save turn_{i}.pkl - no exceptions
+        2. ALWAYS save error details in history entry 
+        3. ALWAYS increment game_turn (even for failures)
+        4. ALWAYS update latest.pkl = copy of turn_{i}.pkl
+        5. ALWAYS respect max_tries before changing game status from "ongoing"
+        6. Final status for terminated games: "error" (not "completed")
+        """
+        players_info = self._get_players_info(player1, player2)
+        error_context = {"error": {"message": str(error)}}  # Default fallback
+        
+        try:
+            # Ensure game_turn is incremented (KEY REQUIREMENT #3)
+            if hasattr(game, 'increment_game_turn'):
+                game.increment_game_turn()
+            elif hasattr(game.state, 'game_turn'):
+                game.state.game_turn += 1
+            
+            # Create detailed error context
+            error_context = ErrorHandlingRegistry.create_error_context(
+                error, operation, 1, -1, game.state.game_turn,
+                {
+                    "round_num": round_num,
+                    "player1": player1.name,
+                    "player2": player2.name,
+                    "game_phase": getattr(game.state, 'phase', 'unknown'),
+                    "master_error_handler": True
+                }
+            )
+            
+            # Ensure error is captured in history (KEY REQUIREMENT #2)
+            try:
+                if hasattr(game, 'add_history_entry_with_retry'):
+                    game.add_history_entry_with_retry(
+                        1,  # Use player 1 for system errors (1-based indexing)
+                        [("system", f"Master error handler: {operation}")],
+                        {"error": error_context["error"], "context": error_context},
+                        False,
+                        f"Critical error in {operation}: {error_context['error']['message']}"
+                    )
+                elif hasattr(game, 'history'):
+                    game.history.append({
+                        "operation": operation,
+                        "error": error_context["error"],
+                        "context": error_context,
+                        "master_handler": True,
+                        "game_turn": game.state.game_turn
+                    })
+            except Exception as history_error:
+                self._debug_log(f"Failed to save error to history: {history_error}")
+                # Continue anyway to ensure pickle files are saved
+            
+            # Set game status to error (KEY REQUIREMENT #6)
+            if hasattr(game, '_update_evaluation_game_status'):
+                game._update_evaluation_game_status("error")
+            
+            # GUARANTEE: Save pickle files (KEY REQUIREMENTS #1 and #4)
+            try:
+                self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
+                self._debug_log(f"Emergency save completed for error: {error}")
+            except Exception as save_error:
+                self._debug_log(f"CRITICAL: Failed to save game state during error handling: {save_error}")
+                # This is the absolute worst case - log everything we can
+                print(f"CRITICAL ERROR: Unable to save game state: {save_error}")
+                print(f"Original error: {error}")
+                print(f"Game turn: {game.state.game_turn}")
+                print(f"Round: {round_num}")
+            
+        except Exception as handler_error:
+            # Even the error handler failed - log everything
+            self._debug_log(f"Master error handler itself failed: {handler_error}")
+            print(f"CRITICAL: Master error handler failed: {handler_error}")
+            print(f"Original error: {error}")
+        
+        return {
+            "success": False,
+            "error": f"Critical error in {operation}: {str(error)}",
+            "error_context": error_context,
+            "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
+        }
     
     def get_next_indexed_game_id(self, base_game_id: str) -> str:
         """Generate the next available indexed game ID.
@@ -983,44 +1391,325 @@ class OllamaGameManager:
                 return indexed_id
             counter += 1
     
-    def _get_players_info(self, player1: OllamaPlayer, player2: OllamaPlayer) -> Dict[str, Any]:
+    def check_round_status(self, player1_string: str, player2_string: str, round_num: int) -> Dict[str, Any]:
+        """Check the status of a specific round.
+        
+        Args:
+            player1_string: Player 1 string identifier
+            player2_string: Player 2 string identifier  
+            round_num: Round number to check
+            
+        Returns:
+            Dictionary with status information:
+            - exists: bool - whether round directory exists
+            - has_latest: bool - whether latest.pkl exists
+            - status: str - game status ("ongoing", "completed", etc.) or None
+            - needs_execution: bool - whether this round needs to be executed
+            - error: str - error message if any issues
+        """
+        game_dir = self.persistent_manager.get_game_dir(player1_string, player2_string, round_num)
+        latest_path = self.persistent_manager.get_save_path(player1_string, player2_string, round_num)
+        
+        result = {
+            "round_num": round_num,
+            "game_dir": str(game_dir),
+            "exists": game_dir.exists(),
+            "has_latest": latest_path.exists() if game_dir.exists() else False,
+            "status": None,
+            "needs_execution": False,
+            "error": None
+        }
+        
+        if not result["exists"]:
+            result["needs_execution"] = True
+            return result
+            
+        if not result["has_latest"]:
+            result["needs_execution"] = True
+            return result
+            
+        # Check game status from latest.pkl
+        try:
+            # Load the pickle file to get status
+            import pickle
+            with open(latest_path, 'rb') as f:
+                turn_data = pickle.load(f)
+                
+            if "evaluation" not in turn_data:
+                result["error"] = f"Missing 'evaluation' key in latest.pkl"
+                return result
+                
+            if "game_status" not in turn_data["evaluation"]:
+                result["error"] = f"Missing 'game_status' in evaluation"
+                return result
+                
+            result["status"] = turn_data["evaluation"]["game_status"]
+            
+            # Determine if execution is needed
+            if result["status"] == "ongoing":
+                result["needs_execution"] = True
+            else:
+                result["needs_execution"] = False  # completed, error, etc.
+                
+        except Exception as e:
+            result["error"] = f"Error reading latest.pkl: {e}"
+            return result
+            
+        return result
+
+    def execute_multiple_rounds(self, player1_name: str, player2_name: str, 
+                               player1_model: str, player2_model: str,
+                               max_turns: int = 200, rounds: Optional[int] = None) -> Dict[str, Any]:
+        """Execute multiple rounds with automatic detection and resumption.
+        
+        Args:
+            player1_name: Name for player 1
+            player2_name: Name for player 2
+            player1_model: Model for player 1
+            player2_model: Model for player 2
+            max_turns: Maximum turns per game
+            rounds: Number of rounds to execute (None = find first available)
+            
+        Returns:
+            Dictionary with execution results
+        """
+        # Create temporary players to get player strings
+        temp_player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        temp_player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
+        player1_string = temp_player1.player_string
+        player2_string = temp_player2.player_string
+        
+        results = {
+            "player1_string": player1_string,
+            "player2_string": player2_string,
+            "total_rounds_executed": 0,
+            "rounds_completed": 0,
+            "rounds_skipped": 0,
+            "rounds_failed": 0,
+            "round_results": [],
+            "success": True,
+            "error": None
+        }
+        
+        if rounds is None:
+            # Default behavior: execute rounds sequentially until finding completed one
+            round_num = 1
+            while True:
+                print(f"\n🔍 Checking round {round_num:03d}...")
+                status = self.check_round_status(player1_string, player2_string, round_num)
+                
+                if status["error"]:
+                    print(f"❌ Error in {status['game_dir']}: {status['error']}")
+                    results["error"] = status["error"]
+                    results["success"] = False
+                    break
+                
+                if not status["needs_execution"]:
+                    print(f"✅ Round {round_num:03d} already completed ({status['status']}) - skipping")
+                    print(f"📁 Path: {status['game_dir']}")
+                    results["rounds_skipped"] += 1
+                    results["round_results"].append({
+                        "round": round_num,
+                        "action": "skipped",
+                        "status": status["status"],
+                        "path": status["game_dir"]
+                    })
+                    round_num += 1
+                    continue
+                
+                # Execute this round
+                print(f"🎮 Executing round {round_num:03d}...")
+                print(f"📁 Path: {status['game_dir']}")
+                
+                if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
+                    print(f"♻️ Resuming from existing save...")
+                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
+                else:
+                    print(f"🆕 Initializing new round...")
+                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
+                
+                results["total_rounds_executed"] += 1
+                results["round_results"].append({
+                    "round": round_num,
+                    "action": "executed",
+                    "result": result,
+                    "path": status["game_dir"]
+                })
+                
+                if result["success"]:
+                    results["rounds_completed"] += 1
+                    print(f"✅ Round {round_num:03d} completed successfully")
+                    # Stop after completing one round in default mode
+                    break
+                else:
+                    results["rounds_failed"] += 1
+                    print(f"❌ Round {round_num:03d} failed: {result.get('error', 'Unknown error')}")
+                    # KEY REQUIREMENT: In default mode, stop after attempting first round regardless of outcome
+                    print(f"🛑 Stopping after attempting round {round_num:03d} (default mode)")
+                    break
+        else:
+            # Execute specific number of rounds
+            for round_num in range(1, rounds + 1):
+                print(f"\n🔍 Checking round {round_num:03d}...")
+                status = self.check_round_status(player1_string, player2_string, round_num)
+                
+                if status["error"]:
+                    print(f"❌ Error in {status['game_dir']}: {status['error']}")
+                    results["error"] = status["error"]
+                    results["success"] = False
+                    break
+                
+                if not status["needs_execution"]:
+                    print(f"✅ Round {round_num:03d} already completed ({status['status']}) - skipping")
+                    print(f"📁 Path: {status['game_dir']}")
+                    results["rounds_skipped"] += 1
+                    results["round_results"].append({
+                        "round": round_num,
+                        "action": "skipped",
+                        "status": status["status"],
+                        "path": status["game_dir"]
+                    })
+                    continue
+                
+                # Execute this round
+                print(f"🎮 Executing round {round_num:03d}...")
+                print(f"📁 Path: {status['game_dir']}")
+                
+                if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
+                    print(f"♻️ Resuming from existing save...")
+                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
+                else:
+                    print(f"🆕 Initializing new round...")
+                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
+                
+                results["total_rounds_executed"] += 1
+                results["round_results"].append({
+                    "round": round_num,
+                    "action": "executed",
+                    "result": result,
+                    "path": status["game_dir"]
+                })
+                
+                if result["success"]:
+                    results["rounds_completed"] += 1
+                    print(f"✅ Round {round_num:03d} completed successfully")
+                else:
+                    results["rounds_failed"] += 1
+                    print(f"❌ Round {round_num:03d} failed: {result.get('error', 'Unknown error')}")
+        
+        return results
+
+    def run_single_round(self, player1_name: str, player2_name: str, 
+                        player1_model: str, player2_model: str, round_num: int, 
+                        max_turns: int = 200) -> Dict[str, Any]:
+        """Run a single round (new game).
+        
+        Args:
+            player1_name: Name for player 1
+            player2_name: Name for player 2
+            player1_model: Model for player 1
+            player2_model: Model for player 2
+            round_num: Round number
+            max_turns: Maximum turns per game
+            
+        Returns:
+            Dictionary with game results
+        """
+        # Create players
+        player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
+        
+        # Clear any existing round directory
+        game_dir = self.persistent_manager.get_game_dir(player1.player_string, player2.player_string, round_num)
+        if game_dir.exists():
+            import shutil
+            shutil.rmtree(game_dir)
+        
+        # Initialize new game
+        game = self.persistent_manager.initialize_new_game(
+            player1.player_string, 
+            player2.player_string,
+            (player1_name, player2_name),
+            self.max_tries,
+            round_num
+        )
+        
+        # Set game context
+        player1.set_game_context(game, 0)
+        player2.set_game_context(game, 1)
+        
+        # Run the game using existing logic
+        return self._execute_game_loop(game, player1, player2, max_turns, round_num)
+
+    def resume_existing_round(self, player1_name: str, player2_name: str,
+                             player1_model: str, player2_model: str, round_num: int,
+                             max_turns: int = 200) -> Dict[str, Any]:
+        """Resume an existing round from latest.pkl.
+        
+        Args:
+            player1_name: Name for player 1
+            player2_name: Name for player 2
+            player1_model: Model for player 1
+            player2_model: Model for player 2
+            round_num: Round number
+            max_turns: Maximum turns per game
+            
+        Returns:
+            Dictionary with game results
+        """
+        # Create players
+        player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
+        
+        # Load existing game
+        game = self.persistent_manager.load_game_state(player1.player_string, player2.player_string, round_num)
+        
+        # Set game context
+        player1.set_game_context(game, 0)
+        player2.set_game_context(game, 1)
+        
+        # Continue the game using existing logic
+        return self._execute_game_loop(game, player1, player2, max_turns, round_num)
         """Build players info dictionary for saving."""
         return {
             "1": [{"name": f"{player1.model} (Single)", "model": player1.model, "temperature": player1.temperature, "top_p": player1.top_p}],
             "2": [{"name": f"{player2.model} (Single)", "model": player2.model, "temperature": player2.temperature, "top_p": player2.top_p}]
         }
         
-    def create_ai_vs_ai_game(self, game_id: str, player1_name: str = "AI Player 1", 
-                           player2_name: str = "AI Player 2", config=None) -> tuple[Game, OllamaPlayer, OllamaPlayer]:
+    def create_ai_vs_ai_game(self, player1_name: str = "AI Player 1", 
+                           player2_name: str = "AI Player 2", player1_model: Optional[str] = None, 
+                           player2_model: Optional[str] = None, temperature: float = 0.7, 
+                           top_p: float = 0.9) -> tuple[Game, OllamaPlayer, OllamaPlayer]:
         """Create a new AI vs AI game.
         
         Args:
-            game_id: Unique game identifier
             player1_name: Name for player 1
             player2_name: Name for player 2
-            config: Optional GameConfig for player setup
+            player1_model: Model for player 1 (defaults to self.model)
+            player2_model: Model for player 2 (defaults to self.model)
+            temperature: Temperature for LLM responses
+            top_p: Top-p sampling parameter
             
         Returns:
             Tuple of (game, player1, player2)
         """
-        # Create or use provided configuration
-        if config is None:
-            from aquawar.config import create_default_ollama_config
-            config = create_default_ollama_config(model=self.model)
+        # Use provided models or default to self.model
+        if player1_model is None:
+            player1_model = self.model
+        if player2_model is None:
+            player2_model = self.model
+            
+        # Create AI players
+        player1 = OllamaPlayer(player1_name, player1_model, temperature, top_p, debug=self.debug)
+        player2 = OllamaPlayer(player2_name, player2_model, temperature, top_p, debug=self.debug)
         
-        # Initialize game with configuration
-        game = self.persistent_manager.initialize_new_game(game_id, (player1_name, player2_name), config)
-        
-        # Create AI players based on configuration
-        player1_model = config.player_1.models[0].model
-        player1_temp = config.player_1.models[0].temperature
-        player1_top_p = config.player_1.models[0].top_p
-        player2_model = config.player_2.models[0].model
-        player2_temp = config.player_2.models[0].temperature
-        player2_top_p = config.player_2.models[0].top_p
-        
-        player1 = OllamaPlayer(player1_name, player1_model, player1_temp, player1_top_p, debug=self.debug)
-        player2 = OllamaPlayer(player2_name, player2_model, player2_temp, player2_top_p, debug=self.debug)
+        # Initialize game with new structure
+        game = self.persistent_manager.initialize_new_game(
+            player1.player_string, 
+            player2.player_string,
+            (player1_name, player2_name),
+            self.max_tries
+        )
         
         # Set game context
         player1.set_game_context(game, 0)
@@ -1173,17 +1862,18 @@ class OllamaGameManager:
             # If history tracking fails, just log and continue
             self._debug_log(f"History tracking failed (non-fatal): {e}")
     
-    def _save_error_state_safely(self, game: 'Game', final_game_id: str, players_info: Dict[str, Any], 
-                                 exception: Exception, attempt: int) -> None:
+    def _save_error_state_safely(self, game: 'Game', player1: OllamaPlayer, player2: OllamaPlayer, 
+                                 players_info: Dict[str, Any], exception: Exception, attempt: int) -> None:
         """Save error state for debugging without crashing."""
         try:
-            self.persistent_manager.save_game_state(game, final_game_id, players_info)
+            self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, 1, players_info)
             self._debug_log(f"Error state saved for turn {game.state.game_turn} attempt {attempt}")
         except Exception as save_error:
             self._debug_log(f"Failed to save error state (non-fatal): {save_error}")
     
     def _process_turn_error(self, exception: Exception, attempt: int, max_tries: int, 
-                           player_idx: int, game: 'Game', final_game_id: str, players_info: Dict[str, Any]) -> Dict[str, Any]:
+                           player_idx: int, game: 'Game', player1: OllamaPlayer, player2: OllamaPlayer, 
+                           players_info: Dict[str, Any]) -> Dict[str, Any]:
         """Centralized error processing for turn failures."""
         
         # 1. Error categorization
@@ -1196,7 +1886,7 @@ class OllamaGameManager:
         self._log_detailed_error(exception, attempt, player_idx, game.state.game_turn)
         
         # 4. Error state preservation
-        self._save_error_state_safely(game, final_game_id, players_info, exception, attempt)
+        self._save_error_state_safely(game, player1, player2, players_info, exception, attempt)
         
         return {
             "user_message": user_message,
@@ -1205,73 +1895,137 @@ class OllamaGameManager:
             "technical_details": str(exception)
         }
     
-    def run_ai_vs_ai_game(self, game_id: str, max_turns: int = 100, auto_index: bool = True) -> Dict[str, Any]:
-        """Run a complete AI vs AI game until completion.
+    def run_ai_vs_ai_game(self, player1_name: str = "AI Player 1", player2_name: str = "AI Player 2",
+                         max_turns: int = 100, player1_model: Optional[str] = None, 
+                         player2_model: Optional[str] = None, rounds: Optional[int] = None) -> Dict[str, Any]:
+        """Run AI vs AI game(s) with multiple rounds support.
         
         Args:
-            game_id: Game identifier (will be auto-indexed if auto_index=True)
+            player1_name: Name for player 1
+            player2_name: Name for player 2
             max_turns: Maximum number of turns before forcing end
-            auto_index: If True, automatically create indexed save directory
+            player1_model: Model for player 1 (defaults to self.model)
+            player2_model: Model for player 2 (defaults to self.model)
+            rounds: Number of rounds to execute (None = find first available)
             
         Returns:
             Dictionary with game results
         """
-        # Auto-generate indexed game ID if requested
-        if auto_index:
-            final_game_id = self.get_next_indexed_game_id(game_id)
-            print(f"Using auto-indexed game ID: {final_game_id}")
-        else:
-            final_game_id = game_id
+        # Use provided models or default to self.model
+        if player1_model is None:
+            player1_model = self.model
+        if player2_model is None:
+            player2_model = self.model
+            
+        # Use new multiple rounds logic
+        results = self.execute_multiple_rounds(
+            player1_name, player2_name, player1_model, player2_model, max_turns, rounds
+        )
         
-        game = None  # Initialize to None for error handling
+        # For compatibility with existing CLI, adapt results format for single round mode
+        if rounds is None and results["round_results"]:
+            # Return the first executed round's result for single-round compatibility
+            for round_result in results["round_results"]:
+                if round_result["action"] == "executed":
+                    single_result = round_result["result"]
+                    # Add save_path for CLI compatibility
+                    if "save_path" not in single_result:
+                        single_result["save_path"] = round_result["path"]
+                    return single_result
+            
+            # If no rounds were executed, return summary
+            return {
+                "success": results["success"],
+                "error": results.get("error", "No rounds needed execution"),
+                "rounds_skipped": results["rounds_skipped"],
+                "save_path": f"{results['player1_string']}/{results['player2_string']}/"
+            }
+        
+        # For multi-round mode, return full results
+        return results
+    
+    def _display_team_status(self, game: Game):
+        """Display current status of both teams."""
+        print("\n--- Team Status ---")
+        for i, player in enumerate(game.state.players):
+            if player.team:
+                living_count = len(player.team.living_fish())
+                total_hp = sum(f.hp for f in player.team.fish if f.is_alive())
+                print(f"{player.name}: {living_count}/4 fish alive, {total_hp} total HP")
+        print("-------------------")
+
+    def _get_players_info(self, player1: OllamaPlayer, player2: OllamaPlayer) -> Dict[str, Any]:
+        """Build players info dictionary for saving."""
+        return {
+            "1": [{"name": f"{player1.model} (Single)", "model": player1.model, "temperature": player1.temperature, "top_p": player1.top_p}],
+            "2": [{"name": f"{player2.model} (Single)", "model": player2.model, "temperature": player2.temperature, "top_p": player2.top_p}]
+        }
+
+    def _execute_game_loop(self, game: Game, player1: OllamaPlayer, player2: OllamaPlayer, 
+                          max_turns: int, round_num: int) -> Dict[str, Any]:
+        """Execute the main game loop for a round.
+        
+        Args:
+            game: Game instance
+            player1: Player 1
+            player2: Player 2 
+            max_turns: Maximum turns per game
+            round_num: Round number
+            
+        Returns:
+            Dictionary with game results
+        """
+        players = [player1, player2]
+        players_info = self._get_players_info(player1, player2)
+        
         try:
-            # Create game and players
-            game, player1, player2 = self.create_ai_vs_ai_game(final_game_id)
-            players = [player1, player2]
-            players_info = self._get_players_info(player1, player2)
+            # Check if teams are already selected
+            teams_selected = all(player.team is not None for player in game.state.players)
             
-            print(f"Starting AI vs AI game: {player1.name} vs {player2.name}")
-            print(f"Using model: {self.model}")
+            if not teams_selected:
+                print("Team selection phase...")
+                # Team selection phase
+                for i, player in enumerate(players):
+                    if game.state.players[i].team is None:
+                        print(f"\n{player.name} selecting team...")
+                        available_fish = game.state.players[i].roster.copy()
+                        
+                        try:
+                            # Create save callback for sequential turn files
+                            def save_callback():
+                                self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
+                            
+                            action = player.make_team_selection(available_fish, self.max_tries, save_callback)
+                            
+                            if not action.success:
+                                print(f"❌ Team selection failed for {player.name}: {action.message}")
+                                # Ensure game status is set to error for failed team selection
+                                game._update_evaluation_game_status("error")
+                                # Save the failed turn with error status
+                                self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
+                                return {
+                                    "success": False,
+                                    "error": f"Team selection failed for {player.name}: {action.message}",
+                                    "turn": game.state.game_turn,
+                                    "phase": "team_selection",
+                                    "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
+                                }
+                            
+                        except Exception as team_error:
+                            # Critical error during team selection - use master error handler
+                            self._debug_log(f"Critical error during team selection for {player.name}: {team_error}")
+                            return self._handle_turn_execution_error(
+                                team_error, game, player1, player2, round_num, 
+                                f"team_selection_{player.name}"
+                            )
+                        
+                        print(f"✓ {action.message}")
+                        # Save after each team selection
+                        self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
+            else:
+                print("Teams already selected, continuing battle phase...")
             
-            # Team selection phase
-            for i, player in enumerate(players):
-                print(f"\n{player.name} selecting team...")
-                available_fish = game.state.players[i].roster.copy()
-                
-                # Get max_tries from config if available
-                max_tries = 3  # Default
-                try:
-                    config_path = Path(self.save_dir) / final_game_id / "config.json"
-                    if config_path.exists():
-                        from aquawar.config import GameConfig
-                        config = GameConfig.load_from_file(config_path)
-                        max_tries = config.max_tries
-                except Exception:
-                    pass  # Use default if config loading fails
-                
-                action = player.make_team_selection(available_fish, max_tries)
-                
-                if not action.success:
-                    print(f"❌ Team selection failed for {player.name}: {action.message}")
-                    # Save the failed turn to turn_{game_turn}.pkl
-                    try:
-                        self.persistent_manager.save_game_state(game, final_game_id, players_info)
-                        print(f"Failed turn saved to turn_{game.state.game_turn:03d}.pkl")
-                    except Exception as save_error:
-                        print(f"Failed to save error state: {save_error}")
-                    
-                    return {
-                        "success": False,
-                        "error": f"Team selection failed for {player.name}: {action.message}",
-                        "turn": game.state.game_turn,
-                        "phase": "team_selection"
-                    }
-                
-                print(f"✓ {action.message}")
-                # Save after each team selection
-                self.persistent_manager.save_game_state(game, final_game_id, players_info)
-            
-            print("\nStarting battle phase...")
+            print("\nStarting/continuing battle phase...")
             
             # Main game loop
             game_turn = 0
@@ -1292,32 +2046,21 @@ class OllamaGameManager:
                     # Update evaluation: game completed
                     game._update_evaluation_game_status("completed")
                     
-                    self.persistent_manager.save_game_state(game, final_game_id, players_info)
+                    self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                     
                     return {
                         "success": True,
                         "winner": winner,
                         "winner_name": winner_name,
                         "turns": game_turn,
-                        "game_id": final_game_id
+                        "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
                     }
-                
-                # Get max_tries from config
-                max_tries = 3  # Default
-                try:
-                    config_path = Path(self.save_dir) / final_game_id / "config.json"
-                    if config_path.exists():
-                        from aquawar.config import GameConfig
-                        config = GameConfig.load_from_file(config_path)
-                        max_tries = config.max_tries
-                except Exception:
-                    pass
                 
                 # Execute turn with global error handling
                 self._debug_log(f"Starting turn execution - Game turn: {game_turn}, Current player: {current_player_idx}, Phase: {game.state.phase}")
                 success = False
                 
-                for attempt in range(max_tries):
+                for attempt in range(self.max_tries):
                     # Create turn context for documentation
                     turn_context = {
                         "attempt": attempt + 1,
@@ -1328,7 +2071,7 @@ class OllamaGameManager:
                         "error": None
                     }
                     
-                    self._debug_log(f"Attempt {attempt + 1}/{max_tries}")
+                    self._debug_log(f"Attempt {attempt + 1}/{self.max_tries}")
                     
                     try:
                         # Business logic with context capture
@@ -1365,27 +2108,33 @@ class OllamaGameManager:
                         self._add_history_entry_safely(game, turn_context)
                         
                         # Process error for retry logic
-                        error_info = self._process_turn_error(e, attempt+1, max_tries, current_player_idx, game, final_game_id, players_info)
+                        error_info = self._process_turn_error(e, attempt+1, self.max_tries, current_player_idx, game, player1, player2, players_info)
                         print(f"❌ Turn failed: {error_info['user_message']}")
                         
-                        if attempt < max_tries - 1:
-                            print(f"Retrying... ({attempt + 2}/{max_tries})")
+                        # Save after each failed turn attempt 
+                        try:
+                            self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
+                            self._debug_log(f"Sequential save completed for failed turn attempt {attempt + 1}")
+                        except Exception as save_error:
+                            self._debug_log(f"Failed to save after failed turn attempt {attempt + 1}: {save_error}")
+                        
+                        if attempt < self.max_tries - 1:
+                            print(f"Retrying... ({attempt + 2}/{self.max_tries})")
                 
                 if not success:
-                    print(f"❌ Turn failed after {max_tries} attempts. Terminating game.")
-                    if game:
-                        game._update_evaluation_game_status("error")
-                        self.persistent_manager.save_game_state(game, final_game_id, players_info)
+                    print(f"❌ Turn failed after {self.max_tries} attempts. Terminating game.")
+                    game._update_evaluation_game_status("error")
+                    self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                     return {
                         "success": False,
-                        "error": f"Turn failed after {max_tries} attempts",
+                        "error": f"Turn failed after {self.max_tries} attempts",
                         "turns": game_turn,
-                        "game_id": final_game_id
+                        "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
                     }
                 
                 # Save after each turn
                 self._debug_log("Starting post-turn save operation")
-                self.persistent_manager.save_game_state(game, final_game_id, players_info)
+                self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                 self._debug_log("Save operation completed")
                 
                 # Display current team status
@@ -1394,34 +2143,15 @@ class OllamaGameManager:
                 self._debug_log("Team status display completed")
             
             # Game exceeded max turns
-            if game:
-                game._update_evaluation_game_status("timeout")
+            game._update_evaluation_game_status("timeout")
             return {
                 "success": False,
                 "error": f"Game exceeded maximum turns ({max_turns})",
                 "turns": game_turn,
-                "game_id": final_game_id
+                "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
             }
             
         except Exception as e:
-            # Only try to update game status if game variable is available
-            if game:
-                try:
-                    game._update_evaluation_game_status("error")
-                except:
-                    pass  # Ignore errors when updating evaluation status
-            return {
-                "success": False,
-                "error": f"Game execution error: {str(e)}",
-                "game_id": final_game_id
-            }
-    
-    def _display_team_status(self, game: Game):
-        """Display current status of both teams."""
-        print("\n--- Team Status ---")
-        for i, player in enumerate(game.state.players):
-            if player.team:
-                living_count = len(player.team.living_fish())
-                total_hp = sum(f.hp for f in player.team.fish if f.is_alive())
-                print(f"{player.name}: {living_count}/4 fish alive, {total_hp} total HP")
-        print("-------------------")
+            # Use master error handler to ensure KEY REQUIREMENTS are met
+            self._debug_log(f"Critical error in game loop: {e}")
+            return self._handle_turn_execution_error(e, game, player1, player2, round_num, "game_loop")
