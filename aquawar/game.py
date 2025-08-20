@@ -805,7 +805,7 @@ All fish: 400 HP, 100 ATK base
         # Add error details if provided (for failed attempts)
         if error_details:
             history_entry["error_details"] = error_details
-        self._debug_log(f"Adding history entry: {history_entry} ({len(self.history)} -> {len(self.history) + 1})")
+        self._debug_log(f"Adding history entry: ({len(self.history)} -> {len(self.history) + 1})")
         self.history.append(history_entry)
 
 

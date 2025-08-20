@@ -247,6 +247,29 @@ def active_skill_tool(fish_index: int, target_index: Optional[int] = None) -> st
 
 
 class OllamaPlayer(BasePlayer):
+    def get_system_message(self) -> str:
+        """Get system message for the LLM."""
+        return f"""You are {self.name}, an expert Aquawar player competing in a tournament.\n\nAquawar is a turn-based strategy game where you select 4 fish and battle against an opponent.\n\nGAME PHASES:\n1. TEAM SELECTION: Select 4 fish from 12 available (indices 0-11)\n2. ASSERTION PHASE: Optionally guess hidden enemy fish identity  \n3. ACTION PHASE: Attack or use active skills\n\nKEY RULES:\n- All fish start with 400 HP, 100 ATK\n- Each fish has a unique active skill\n- You win by defeating all enemy fish\n\nRefer to the game manual for detailed rules.\n"""
+    def set_game_manager(self, game_manager, other_player=None):
+        """Set game manager reference for save functionality."""
+        self._game_manager = game_manager
+        self._other_player = other_player
+
+    @property
+    def game_manager(self):
+        """Get the game manager reference."""
+        return self._game_manager
+
+    @property
+    def opponent(self):
+        """Get the opponent player reference."""
+        return self._other_player
+    @property
+    def player_string(self) -> str:
+        """Generate player string for directory naming.
+        Converts model format like 'llama3.1:8b' to 'llama3.1_8b_single' for future multi-agent support.
+        """
+        return self.model.replace(":", "_") + "_single"
     """AI player using Ollama LLM with Langchain tool calling."""
     def _debug_log(self, message: str) -> None:
         """Print debug message if debug mode is enabled."""
@@ -267,7 +290,6 @@ class OllamaPlayer(BasePlayer):
         self.model = model
         self.temperature = temperature
         self.top_p = top_p
-        
         # Select tools based on model compatibility
         if "gpt-oss" in model.lower():
             # Use string-based tools for GPT-OSS models
@@ -287,96 +309,16 @@ class OllamaPlayer(BasePlayer):
                 normal_attack_tool,
                 active_skill_tool
             ]
-        
         # Initialize Ollama chat model with appropriate tools
         self.llm = ChatOllama(
             model=model,
             temperature=temperature,
             top_p=top_p,
         ).bind_tools(tools)
-    
-    @property
-    def player_string(self) -> str:
-        """Generate player string for directory naming.
-        
-        Converts model format like 'llama3.1:8b' to 'llama3.1_8b_single'
-        to prepare for future multi-agent support like 'llama3.1_8b_majority_5'.
-        """
-        # Replace colons with underscores and add agent type suffix
-        return self.model.replace(":", "_") + "_single"
-        
-    def get_system_message(self) -> str:
-        """Get system message for the LLM."""
-        return f"""You are {self.name}, an expert Aquawar player competing in a tournament.
+        # References for save functionality (set by game manager)
+        self._game_manager = None
+        self._other_player = None
 
-Aquawar is a turn-based strategy game where you select 4 fish and battle against an opponent.
-
-GAME PHASES:
-1. TEAM SELECTION: Select 4 fish from 12 available (indices 0-11)
-2. ASSERTION PHASE: Optionally guess hidden enemy fish identity  
-3. ACTION PHASE: Attack or use active skills
-
-KEY RULES:
-- All fish start with 400 HP, 100 ATK
-- Hidden identities: fish are hidden until revealed by successful assertion
-- Successful assertion: enemy fish revealed, all enemy fish lose 50 HP
-- Failed assertion: all your fish lose 50 HP
-- Normal attack: 50% ATK damage (50 base damage)
-- Active skills: unique abilities per fish type
-
-WIN CONDITIONS:
-- Eliminate all enemy fish
-- If time limit reached: decided by fish count, total HP, highest single HP
-
-You must use the provided tools to make your moves. Always think strategically about:
-- Team composition and synergies
-- When to assert vs skip
-- Target prioritization
-- Resource management
-
-IMPORTANT: If you select Mimic Fish (index varies by roster), you MUST also specify mimic_choice parameter with the fish name you want it to copy. Available fish names are: Archerfish, Pufferfish, Electric Eel, Sunfish, Sea Wolf, Manta Ray, Sea Turtle, Octopus, Great White Shark, Hammerhead Shark, Clownfish, Mimic Fish.
-
-Play to win!"""
-    
-    def _capture_full_response(self, response) -> str:
-        """Capture full LLM response details for debugging purposes."""
-        import json
-        
-        response_data = {
-            "content": str(response.content) if hasattr(response, 'content') else None,
-            "response_metadata": getattr(response, 'response_metadata', {}),
-            "tool_calls": [],
-            "raw_response_type": str(type(response)),
-        }
-        
-        # Try to extract tool calls
-        try:
-            tool_calls = getattr(response, 'tool_calls', None)
-            if tool_calls:
-                for tool_call in tool_calls:
-                    call_data = {
-                        "name": getattr(tool_call, 'name', str(tool_call)),
-                        "args": getattr(tool_call, 'args', {}),
-                        "id": getattr(tool_call, 'id', None),
-                        "raw": str(tool_call)
-                    }
-                    response_data["tool_calls"].append(call_data)
-        except Exception as e:
-            response_data["tool_call_extraction_error"] = str(e)
-        
-        # Try to get any additional attributes
-        try:
-            response_data["additional_attrs"] = {
-                attr: str(getattr(response, attr))[:200] for attr in dir(response) 
-                if not attr.startswith('_') and attr not in ['content', 'response_metadata', 'tool_calls']
-            }
-        except Exception as e:
-            response_data["attr_extraction_error"] = str(e)
-        
-        try:
-            return json.dumps(response_data, indent=2)
-        except Exception as e:
-            return f"JSON serialization failed: {e}\nRaw response: {str(response)[:500]}"
 
     def _extract_tool_call(self, response: BaseMessage) -> Optional[Dict[str, Any]]:
         """Extract tool call from response if available."""
@@ -385,10 +327,8 @@ Play to win!"""
             # Try to access tool_calls attribute if it exists
             self._debug_log(f"_extract_tool_call: accessing tool_calls attribute")
             tool_calls = getattr(response, 'tool_calls', None)
-            self._debug_log(f"_extract_tool_call: tool_calls = {tool_calls}")
             if tool_calls and len(tool_calls) > 0:
                 result = tool_calls[0]
-                self._debug_log(f"_extract_tool_call: returning {result}")
                 return result
         except (AttributeError, IndexError) as e:
             self._debug_log(f"_extract_tool_call: caught exception {e} (type: {type(e).__name__})")
@@ -1054,6 +994,235 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             return action
 
     # ------------------------------------------------------------------
+    # Refactored Core Methods for Move Generation, Persistence, and Turn Management
+    # ------------------------------------------------------------------
+    
+    def make_move(self, phase: str, messages: List[Any] = None) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+        """Core move generation method that can be reused by different player types.
+        
+        Args:
+            phase: "assertion" or "action" or "team_selection"  
+            messages: Optional pre-built messages, if None will generate from game state
+            
+        Returns:
+            Tuple of (history_entry, parsed_move_result, additional_context)
+        """
+        if not self.game or self.player_index is None:
+            raise ValueError("No game context set for move generation")
+        
+        # Generate messages if not provided
+        if messages is None:
+            if phase == "assertion":
+                prompt = self.game.prompt_for_assertion(self.player_index)
+                messages = [
+                    ("system", self.get_system_message()),
+                    ("user", f"{prompt}\n\nMake your assertion decision using either assert_fish_tool or skip_assertion_tool.")
+                ]
+            elif phase == "action":
+                prompt = self.game.prompt_for_action(self.player_index)
+                messages = [
+                    ("system", self.get_system_message()),
+                    ("user", f"{prompt}\n\nMake your action using either normal_attack_tool or active_skill_tool.")
+                ]
+            else:
+                raise ValueError(f"Unsupported phase for automatic message generation: {phase}")
+        
+        # Context for tracking move generation
+        context = {
+            "phase": phase,
+            "prompts": messages,
+            "llm_response": None,
+            "tool_call": None,
+            "parameters": None,
+            "validated_parameters": None,
+            "move_type": None
+        }
+        
+        try:
+            # Increment game turn for move attempt
+            self.game.increment_game_turn()
+            
+            # Call LLM
+            response = self.llm.invoke(messages)
+            context["llm_response"] = json.loads(response.model_dump_json())
+            
+
+            # Extract and validate tool call
+            tool_call = self._extract_tool_call(response)
+            context["tool_call"] = tool_call
+
+            if not tool_call:
+                raise RuntimeError("No tool call made by LLM")
+
+            tool_name = tool_call['name']
+            args = tool_call['args']
+            context["parameters"] = {"tool_name": tool_name, "args": args}
+
+            # Execute move based on phase and tool
+            if phase == "assertion":
+                if tool_name == 'skip_assertion_tool':
+                    context["move_type"] = "skip_assertion"
+                    context["validated_parameters"] = {}
+                    result = self.game.skip_assertion(self.player_index)
+
+                elif tool_name in ['assert_fish_tool', 'assert_fish_tool_gpt_oss']:
+                    enemy_index = args.get('enemy_index')
+                    fish_name = args.get('fish_name')
+
+                    if enemy_index is None or fish_name is None:
+                        raise RuntimeError("Missing assertion parameters from LLM/tool call")
+
+                    try:
+                        enemy_index = int(enemy_index)
+                    except Exception:
+                        raise RuntimeError(f"Invalid enemy_index value: {enemy_index}")
+                    context["move_type"] = "assert_fish"
+                    context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
+                    result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
+                else:
+                    raise RuntimeError(f"Invalid tool for assertion phase: {tool_name}")
+
+            elif phase == "action":
+                if tool_name in ['normal_attack_tool', 'normal_attack_tool_gpt_oss']:
+                    fish_index = args.get('fish_index')
+                    target_index = args.get('target_index')
+
+                    if fish_index is None or target_index is None:
+                        raise RuntimeError("Missing attack parameters from LLM/tool call")
+                    try:
+                        fish_index = int(fish_index)
+                        target_index = int(target_index)
+                    except Exception:
+                        raise RuntimeError(f"Invalid attack indices: fish_index={fish_index}, target_index={target_index}")
+
+                    context["move_type"] = "normal_attack"
+                    context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    result = self.game.perform_action(self.player_index, fish_index, "NORMAL", target_index)
+
+                elif tool_name in ['active_skill_tool', 'active_skill_tool_gpt_oss']:
+                    fish_index = args.get('fish_index')
+                    target_index = args.get('target_index')
+
+                    if fish_index is None:
+                        raise RuntimeError("Missing fish index for active skill from LLM/tool call")
+                    try:
+                        fish_index = int(fish_index)
+                    except Exception:
+                        raise RuntimeError(f"Invalid fish_index value: {fish_index}")
+
+                    # Handle optional target_index
+                    if target_index is not None and target_index != "" and target_index != "None":
+                        try:
+                            target_index = int(target_index)
+                        except Exception:
+                            raise RuntimeError(f"Invalid target_index value: {target_index}")
+                    else:
+                        target_index = None
+
+                    context["move_type"] = "active_skill"
+                    context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    result = self.game.perform_action(self.player_index, fish_index, "ACTIVE", target_index)
+                else:
+                    raise RuntimeError(f"Invalid tool for action phase: {tool_name}")
+            else:
+                raise RuntimeError(f"Unsupported phase: {phase}")
+            
+            # Create history entry
+            history_entry = {
+                "player": self.player_index,
+                "input_messages": messages,
+                "response": context["llm_response"],
+                "valid": True,
+                "move": f"Turn {self.game.state.game_turn}: {phase} - {result}",
+                "context": context,
+                "success": True
+            }
+            
+            return history_entry, result, context
+            
+        except Exception as e:
+            # Create error history entry
+            context["error"] = str(e)
+            context["success"] = False
+            
+            history_entry = {
+                "player": self.player_index,
+                "input_messages": messages,
+                "response": context.get("llm_response", {"content": f"Error: {e}"}),
+                "valid": False,
+                "move": f"Turn {self.game.state.game_turn}: {phase} - Error: {e}",
+                "context": context,
+                "success": False
+            }
+            
+            return history_entry, str(e), context
+    
+    def save_turn_pickle(self, file_prefix: str, additional_data: Dict[str, Any] = None) -> str:
+        """Save current game state to pickle file with specified prefix.
+        
+        Args:
+            file_prefix: Prefix for the file (e.g., "turn", "v1", "v2")
+            additional_data: Optional additional data to include in save
+            
+        Returns:
+            Path to saved file
+        """
+        if not hasattr(self, '_game_manager') or not self._game_manager:
+            raise ValueError("No game manager available for saving")
+        
+        # Get player strings for directory structure
+        if hasattr(self, '_other_player'):
+            player1_string = self.player_string
+            player2_string = self._other_player.player_string
+        else:
+            # Fallback - use model name
+            player1_string = self.player_string
+            player2_string = self.player_string
+        
+        # Create players_info for saving
+        players_info = {}
+        if additional_data and 'players_info' in additional_data:
+            players_info = additional_data['players_info']
+        else:
+            # Generate basic players_info
+            players_info = {
+                "1": [{"name": f"{self.model} (Single)", "model": self.model, "temperature": self.temperature, "top_p": self.top_p}],
+                "2": [{"name": f"{self.model} (Single)", "model": self.model, "temperature": self.temperature, "top_p": self.top_p}]
+            }
+        
+        # Save with custom prefix by temporarily modifying the save method
+        game_turn = self.game.state.game_turn
+        round_num = additional_data.get('round_num', 1) if additional_data else 1
+        
+        # Get save paths
+        game_dir = self._game_manager.persistent_manager.get_game_dir(player1_string, player2_string, round_num)
+        game_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Custom save path with specified prefix
+        save_path = game_dir / f"{file_prefix}_{game_turn:03d}.pkl"
+        latest_path = game_dir / "latest.pkl"
+        
+        # Save the game
+        self.game.save_game(str(save_path), players_info)
+        self.game.save_game(str(latest_path), players_info)  # Also save as latest
+        
+        return str(save_path)
+    
+    def end_game_turn(self, history_entry: Dict[str, Any], additional_data: Dict[str, Any] = None) -> None:
+        """Complete the current turn by adding history and saving state.
+        
+        Args:
+            history_entry: History entry to add to game
+            additional_data: Optional additional data for saving
+        """
+        # Add history entry to game
+        self.game.history.append(history_entry)
+        
+        # Save turn state with "turn" prefix
+        save_path = self.save_turn_pickle("turn", additional_data)
+        self._debug_log(f"Turn completed and saved to: {save_path}")
+
+    # ------------------------------------------------------------------
     # Enhanced context-capturing methods for global error handling
     # ------------------------------------------------------------------
     
@@ -1085,167 +1254,35 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         return "unknown"
     
     def make_action_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
-        """Make action decision with full context capture for documentation."""
-        context: Dict[str, Any] = {
-            "prompts": None,
-            "llm_response": None,
-            "tool_call": None,
-            "parameters": None,
-            "validated_parameters": None,
-            "action_type": None
-        }
+        """Make action decision with full context capture for documentation.
         
+        This method now delegates to the refactored make_move method.
+        """
         try:
-            if not self.game or self.player_index is None:
-                raise ValueError("No game context set for action")
-            
-            # Increment game turn for any action attempt (valid or invalid)
-            self.game.increment_game_turn()
-            
-            # Capture prompts
-            prompt = self.game.prompt_for_action(self.player_index)
-            messages = [
-                ("system", self.get_system_message()),
-                ("user", f"{prompt}\n\nMake your action using either normal_attack_tool or active_skill_tool.")
-            ]
-            context["prompts"] = messages
-            
-            # Capture LLM response
-            response = self.llm.invoke(messages)
-            context["llm_response"] = json.loads(response.model_dump_json())
-            
-            # Capture tool call
-            tool_call = self._extract_tool_call(response)
-            context["tool_call"] = tool_call
-            
-            if not tool_call:
-                raise ValueError("No tool call made")
-            
-            # Capture parameters
-            tool_name = tool_call['name']
-            args = tool_call['args']
-            context["parameters"] = {"tool_name": tool_name, "args": args}
-            
-            # Business logic with parameter validation and action execution
-            if tool_name == 'normal_attack_tool' or tool_name == 'normal_attack_tool_gpt_oss':
-                fish_index = args.get('fish_index')
-                target_index = args.get('target_index')
-                
-                if fish_index is None or target_index is None:
-                    raise ValueError("Missing attack parameters")
-                
-                # Convert string arguments to integers
-                fish_index = int(fish_index)
-                target_index = int(target_index)
-                
-                context["action_type"] = "normal_attack"
-                context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
-                
-                result = self.game.perform_action(self.player_index, fish_index, "NORMAL", target_index)
-                return result, context
-                
-            elif tool_name == 'active_skill_tool' or tool_name == 'active_skill_tool_gpt_oss':
-                fish_index = args.get('fish_index')
-                target_index = args.get('target_index')
-                
-                if fish_index is None:
-                    raise ValueError("Missing fish index for active skill")
-                
-                # Convert string arguments to integers (handle None/empty target_index)
-                fish_index = int(fish_index)
-                if target_index is not None and target_index != "" and target_index != "None":
-                    target_index = int(target_index)
-                else:
-                    target_index = None
-                
-                context["action_type"] = "active_skill"
-                context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
-                
-                result = self.game.perform_action(self.player_index, fish_index, "ACTIVE", target_index)
-                return result, context
-                
-            else:
-                raise ValueError(f"Wrong tool called: {tool_name}")
-                
+            history_entry, result, context = self.make_move("action")
+            return result, context
         except Exception as e:
-            # Don't handle the error here, just ensure context is captured
-            context["error_location"] = self._identify_error_location(e, context)
+            # For backward compatibility, ensure error location is identified
+            context = {
+                "error_location": "action_execution",
+                "error": str(e)
+            }
             raise  # Re-raise for global handling
     
     def make_assertion_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
-        """Make assertion decision with full context capture for documentation."""
-        context: Dict[str, Any] = {
-            "prompts": None,
-            "llm_response": None,
-            "tool_call": None,
-            "parameters": None,
-            "validated_parameters": None,
-            "assertion_type": None
-        }
+        """Make assertion decision with full context capture for documentation.
         
+        This method now delegates to the refactored make_move method.
+        """
         try:
-            if not self.game or self.player_index is None:
-                raise ValueError("No game context set for assertion")
-            
-            # Increment game turn for any assertion attempt (valid or invalid)
-            self.game.increment_game_turn()
-            
-            # Capture prompts
-            prompt = self.game.prompt_for_assertion(self.player_index)
-            messages = [
-                ("system", self.get_system_message()),
-                ("user", f"{prompt}\n\nMake your assertion decision using either assert_fish_tool or skip_assertion_tool.")
-            ]
-            context["prompts"] = messages
-            
-            # Capture LLM response
-            response = self.llm.invoke(messages)
-            context["llm_response"] = json.loads(response.model_dump_json())
-            
-            # Capture tool call
-            tool_call = self._extract_tool_call(response)
-            context["tool_call"] = tool_call
-            
-            if not tool_call:
-                raise ValueError("No tool call made")
-            
-            # Capture parameters
-            tool_name = tool_call['name']
-            args = tool_call['args']
-            context["parameters"] = {"tool_name": tool_name, "args": args}
-            
-            # Business logic with parameter validation
-            if tool_name == 'skip_assertion_tool':
-                context["assertion_type"] = "skip"
-                context["validated_parameters"] = {}
-                
-                result = self.game.skip_assertion(self.player_index)
-                return result, context
-                
-            elif tool_name == 'assert_fish_tool' or tool_name == 'assert_fish_tool_gpt_oss':
-                enemy_index = args.get('enemy_index')
-                fish_name = args.get('fish_name')
-                
-                if enemy_index is None or fish_name is None:
-                    raise ValueError("Missing assertion parameters")
-                
-                # Convert string argument to integer
-                enemy_index = int(enemy_index)
-                
-                context["assertion_type"] = "assert_fish"
-                context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
-                
-                result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
-                # Capture the response text for history
-                
-                return result, context
-                
-            else:
-                raise ValueError(f"Wrong tool called: {tool_name}")
-                
+            history_entry, result, context = self.make_move("assertion")
+            return result, context
         except Exception as e:
-            # Don't handle the error here, just ensure context is captured
-            context["error_location"] = self._identify_error_location(e, context)
+            # For backward compatibility, ensure error location is identified  
+            context = {
+                "error_location": "assertion_execution",
+                "error": str(e)
+            }
             raise  # Re-raise for global handling
 
 
@@ -1567,6 +1604,10 @@ class OllamaGameManager:
         player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
         player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
         
+        # Set game manager references for save functionality
+        player1.set_game_manager(self, player2)
+        player2.set_game_manager(self, player1)
+        
         # Clear any existing round directory
         game_dir = self.persistent_manager.get_game_dir(player1.player_string, player2.player_string, round_num)
         if game_dir.exists():
@@ -1609,6 +1650,10 @@ class OllamaGameManager:
         player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
         player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
         
+        # Set game manager references for save functionality
+        player1.set_game_manager(self, player2)
+        player2.set_game_manager(self, player1)
+        
         # Load existing game
         game = self.persistent_manager.load_game_state(player1.player_string, player2.player_string, round_num)
         
@@ -1650,6 +1695,10 @@ class OllamaGameManager:
         # Create AI players
         player1 = OllamaPlayer(player1_name, player1_model, temperature, top_p, debug=self.debug)
         player2 = OllamaPlayer(player2_name, player2_model, temperature, top_p, debug=self.debug)
+        
+        # Set game manager references for save functionality
+        player1.set_game_manager(self, player2)
+        player2.set_game_manager(self, player1)
         
         # Initialize game with new structure
         game = self.persistent_manager.initialize_new_game(
@@ -1986,18 +2035,18 @@ class OllamaGameManager:
                 current_player = players[current_player_idx]
                 
                 # Debug prints for player indexing investigation (Issue 2)
-                self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
-                self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
-                self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
-                if hasattr(current_player, 'player_index'):
-                    self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
+                # self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
+                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
+                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
+                # if hasattr(current_player, 'player_index'):
+                #     self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
                 
                 # Debug prints for player indexing investigation (Issue 2) 
-                self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
-                self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
-                self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
-                if hasattr(current_player, 'player_index'):
-                    self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
+                # self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
+                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
+                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
+                # if hasattr(current_player, 'player_index'):
+                #     self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
                 
                 print(f"\nGame Turn {game_turn}: {current_player.name}'s turn (Player Turn {game.state.player_turn})")
                 print(f"Phase: {game.state.phase}")
@@ -2057,7 +2106,7 @@ class OllamaGameManager:
                         turn_context["success"] = True
                         turn_context["result"] = result
                         
-                        # Document successful attempt
+                        # Document successful attempt with correct attempt number
                         game.add_history_entry_unified(
                             current_player_idx,  # player_index (0-based)
                             context.get("prompts", []),  # input_messages from context
@@ -2067,7 +2116,9 @@ class OllamaGameManager:
                                 "turn_context": turn_context
                             },  # response dict
                             True,  # valid = True for successful attempts
-                            f"Turn {game.state.game_turn}: {game.state.phase} - {result}"  # move_description
+                            f"Turn {game.state.game_turn}: {game.state.phase} - {result}",  # move_description
+                            attempt=attempt+1,
+                            max_attempts=self.max_tries
                         )
                         
 
