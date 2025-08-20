@@ -1035,7 +1035,8 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             "tool_call": None,
             "parameters": None,
             "validated_parameters": None,
-            "move_type": None
+            "move_type": None,
+            "success": False,
         }
         
         try:
@@ -1137,13 +1138,13 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 "context": context,
                 "success": True
             }
-            
+            context["success"] = True
             return history_entry, result, context
             
         except Exception as e:
             # Create error history entry
             context["error"] = str(e)
-            context["success"] = False
+            # context["success"] = False
             
             history_entry = {
                 "player": self.player_index,
@@ -1977,6 +1978,9 @@ class OllamaGameManager:
         """
         players = [player1, player2]
         players_info = self._get_players_info(player1, player2)
+
+        # Attempt counter
+        attempt = 0
         
         try:
             # Check if teams are already selected
@@ -2028,25 +2032,12 @@ class OllamaGameManager:
             print("\nStarting/continuing battle phase...")
             
             # Main game loop
-            game_turn = 0
+            # game_turn = 0
+            game_turn = game.state.game_turn
             while game_turn < max_turns:
                 game_turn += 1
                 current_player_idx = game.state.current_player - 1  # Convert 1/2 to 0/1
                 current_player = players[current_player_idx]
-                
-                # Debug prints for player indexing investigation (Issue 2)
-                # self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
-                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
-                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
-                # if hasattr(current_player, 'player_index'):
-                #     self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
-                
-                # Debug prints for player indexing investigation (Issue 2) 
-                # self._debug_log(f"[PLAYER INDEX DEBUG] game.state.current_player: {game.state.current_player}")
-                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player_idx: {current_player_idx}")  
-                # self._debug_log(f"[PLAYER INDEX DEBUG] current_player.name: {current_player.name}")
-                # if hasattr(current_player, 'player_index'):
-                #     self._debug_log(f"[PLAYER INDEX DEBUG] current_player.player_index: {current_player.player_index}")
                 
                 print(f"\nGame Turn {game_turn}: {current_player.name}'s turn (Player Turn {game.state.player_turn})")
                 print(f"Phase: {game.state.phase}")
@@ -2074,17 +2065,21 @@ class OllamaGameManager:
                 self._debug_log(f"Starting turn execution - Game turn: {game_turn}, Current player: {current_player_idx}, Phase: {game.state.phase}")
                 success = False
                 
-                for attempt in range(self.max_tries):
+                # for attempt in range(self.max_tries):
+                if attempt < self.max_tries:
+                    attempt += 1
                     # Create turn context for documentation
                     turn_context = {
-                        "attempt": attempt + 1,
+                        # "attempt": attempt + 1,
+                        "attempt": attempt,
                         "player_idx": current_player_idx,
                         "phase": game.state.phase,
                         "game_turn": game.state.game_turn,
                         "success": False,
                         "error": None
                     }
-                    self._debug_log(f"Attempt {attempt + 1}/{self.max_tries}")
+                    # self._debug_log(f"Attempt {attempt + 1}/{self.max_tries}")
+                    self._debug_log(f"Attempt {attempt}/{self.max_tries}")
                     
                     try:
                         # Business logic with context capture
@@ -2094,13 +2089,15 @@ class OllamaGameManager:
                         if game.state.phase == "assertion":
                             self._debug_log("Executing assertion phase")
                             result, context = current_player.make_assertion_simple_with_context()
-                            print(f"Assertion (attempt {attempt + 1}): {result}")
+                            # print(f"Assertion (attempt {attempt + 1}): {result}")
+                            print(f"Assertion (attempt {attempt}): {result}")
                             
                         elif game.state.phase == "action":
                             self._debug_log(f"Executing action phase ({current_player.name})")
                             result, context = current_player.make_action_simple_with_context()
-                            print(f"Action (attempt {attempt + 1}): {result}")
-                        
+                            # print(f"Action (attempt {attempt + 1}): {result}")
+                            print(f"Action (attempt {attempt}): {result}")
+
                         # Success - merge contexts and document
                         turn_context.update(context)
                         turn_context["success"] = True
@@ -2117,14 +2114,20 @@ class OllamaGameManager:
                             },  # response dict
                             True,  # valid = True for successful attempts
                             f"Turn {game.state.game_turn}: {game.state.phase} - {result}",  # move_description
-                            attempt=attempt+1,
+                            # attempt=attempt+1,
+                            attempt=attempt,
                             max_attempts=self.max_tries
                         )
                         
-
-                        self._debug_log("Turn successful, breaking retry loop")
-                        success = True
-                        break
+                        success = context.get("success", False)
+                        if success:
+                            attempt = 0
+                            self._debug_log("Turn successful, resetting attempts counter")
+                        else:
+                            self._debug_log(f"Turn failed, {self.max_tries - attempt} attempts remaining")
+                        # self._debug_log("Turn successful, breaking retry loop")
+                        # success = True
+                        # break
                         
                     except Exception as e:
                         turn_context["error"] = e
@@ -2147,8 +2150,9 @@ class OllamaGameManager:
                         if attempt < self.max_tries - 1:
                             print(f"Retrying... ({attempt + 2}/{self.max_tries})")
                 
-                if not success:
-                    print(f"❌ Turn failed after {self.max_tries} attempts. Terminating game.")
+                if not success and attempt >= self.max_tries:
+                    # print(f"❌ Turn failed after {self.max_tries} attempts. Terminating game.")
+                    print(f"❌ Turn failed after {attempt} attempts. Terminating game.")
                     game._update_evaluation_game_status("error")
                     self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                     return {
