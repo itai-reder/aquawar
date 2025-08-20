@@ -303,7 +303,7 @@ class OllamaPlayer(BasePlayer):
         to prepare for future multi-agent support like 'llama3.1_8b_majority_5'.
         """
         # Replace colons with underscores and add agent type suffix
-        return self.model.replace(":", "_") + "_single"
+        return self.model.replace(":", "_").replace(".", "_") + "_single"
         
     def get_system_message(self) -> str:
         """Get system message for the LLM."""
@@ -380,15 +380,15 @@ Play to win!"""
 
     def _extract_tool_call(self, response: BaseMessage) -> Optional[Dict[str, Any]]:
         """Extract tool call from response if available."""
-        # self._debug_log(f"_extract_tool_call: entering with response type {type(response)}")
+        self._debug_log(f"_extract_tool_call: entering with response type {type(response)}")
         try:
             # Try to access tool_calls attribute if it exists
-            # self._debug_log(f"_extract_tool_call: accessing tool_calls attribute")
+            self._debug_log(f"_extract_tool_call: accessing tool_calls attribute")
             tool_calls = getattr(response, 'tool_calls', None)
-            # self._debug_log(f"_extract_tool_call: tool_calls = {tool_calls}")
+            self._debug_log(f"_extract_tool_call: tool_calls = {tool_calls}")
             if tool_calls and len(tool_calls) > 0:
                 result = tool_calls[0]
-                # self._debug_log(f"_extract_tool_call: returning {result}")
+                self._debug_log(f"_extract_tool_call: returning {result}")
                 return result
         except (AttributeError, IndexError) as e:
             self._debug_log(f"_extract_tool_call: caught exception {e} (type: {type(e).__name__})")
@@ -1405,10 +1405,10 @@ class OllamaGameManager:
             
         return result
 
-    def execute_multiple_rounds(self, player1_name: str, player2_name: str, 
-                               player1_model: str, player2_model: str,
-                               max_turns: int = 200, rounds: Optional[int] = None,
-                               majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+    def execute_multiple_rounds(self, player1_name: str, player2_name: str,
+                                player1_model: str, player2_model: str,
+                                max_turns: int = 200, rounds: Optional[int] = None,
+                                use_majority_vote: bool = False, num_voters: int = 3) -> Dict[str, Any]:
         """Execute multiple rounds with automatic detection and resumption.
         
         Args:
@@ -1422,19 +1422,9 @@ class OllamaGameManager:
         Returns:
             Dictionary with execution results
         """
-        # Create temporary players to get player strings (import here to avoid circular imports)
-        if majority_vote_p1:
-            from .majority_player import MajorityVotePlayer
-            temp_player1 = MajorityVotePlayer(player1_name, player1_model, num_voters, debug=self.debug)
-        else:
-            temp_player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
-            
-        if majority_vote_p2:
-            from .majority_player import MajorityVotePlayer
-            temp_player2 = MajorityVotePlayer(player2_name, player2_model, num_voters, debug=self.debug)
-        else:
-            temp_player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
-            
+        # Create temporary players to get player strings
+        temp_player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        temp_player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
         player1_string = temp_player1.player_string
         player2_string = temp_player2.player_string
         
@@ -1482,10 +1472,10 @@ class OllamaGameManager:
                 
                 if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
                     print(f"♻️ Resuming from existing save...")
-                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns, majority_vote_p1, majority_vote_p2, num_voters)
+                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
                 else:
                     print(f"🆕 Initializing new round...")
-                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns, majority_vote_p1, majority_vote_p2, num_voters)
+                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
                 
                 results["total_rounds_executed"] += 1
                 results["round_results"].append({
@@ -1536,10 +1526,10 @@ class OllamaGameManager:
                 
                 if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
                     print(f"♻️ Resuming from existing save...")
-                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns, majority_vote_p1, majority_vote_p2, num_voters)
+                    result = self.resume_existing_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
                 else:
                     print(f"🆕 Initializing new round...")
-                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns, majority_vote_p1, majority_vote_p2, num_voters)
+                    result = self.run_single_round(player1_name, player2_name, player1_model, player2_model, round_num, max_turns)
                 
                 results["total_rounds_executed"] += 1
                 results["round_results"].append({
@@ -1560,7 +1550,7 @@ class OllamaGameManager:
 
     def run_single_round(self, player1_name: str, player2_name: str, 
                         player1_model: str, player2_model: str, round_num: int, 
-                        max_turns: int = 200, majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+                        max_turns: int = 200) -> Dict[str, Any]:
         """Run a single round (new game).
         
         Args:
@@ -1575,18 +1565,8 @@ class OllamaGameManager:
             Dictionary with game results
         """
         # Create players
-        # Create players (with majority vote support)
-        if majority_vote_p1:
-            from .majority_player import MajorityVotePlayer
-            player1 = MajorityVotePlayer(player1_name, player1_model, num_voters, debug=self.debug)
-        else:
-            player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
-            
-        if majority_vote_p2:
-            from .majority_player import MajorityVotePlayer
-            player2 = MajorityVotePlayer(player2_name, player2_model, num_voters, debug=self.debug)
-        else:
-            player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
+        player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
         
         # Clear any existing round directory
         game_dir = self.persistent_manager.get_game_dir(player1.player_string, player2.player_string, round_num)
@@ -1612,7 +1592,7 @@ class OllamaGameManager:
 
     def resume_existing_round(self, player1_name: str, player2_name: str,
                              player1_model: str, player2_model: str, round_num: int,
-                             max_turns: int = 200, majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+                             max_turns: int = 200) -> Dict[str, Any]:
         """Resume an existing round from latest.pkl.
         
         Args:
@@ -1627,17 +1607,8 @@ class OllamaGameManager:
             Dictionary with game results
         """
         # Create players
-        if majority_vote_p1:
-            from .majority_player import MajorityVotePlayer
-            player1 = MajorityVotePlayer(player1_name, player1_model, num_voters, debug=self.debug)
-        else:
-            player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
-            
-        if majority_vote_p2:
-            from .majority_player import MajorityVotePlayer
-            player2 = MajorityVotePlayer(player2_name, player2_model, num_voters, debug=self.debug)
-        else:
-            player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
+        player1 = OllamaPlayer(player1_name, player1_model, debug=self.debug)
+        player2 = OllamaPlayer(player2_name, player2_model, debug=self.debug)
         
         # Load existing game
         game = self.persistent_manager.load_game_state(player1.player_string, player2.player_string, round_num)
@@ -1877,10 +1848,10 @@ class OllamaGameManager:
         }
     
     def run_ai_vs_ai_game(self, player1_name: str = "AI Player 1", player2_name: str = "AI Player 2",
-                         max_turns: int = 100, player1_model: Optional[str] = None, 
-                         player2_model: Optional[str] = None, rounds: Optional[int] = None,
-                         majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
-        """Run AI vs AI game(s) with multiple rounds support.
+                          max_turns: int = 100, player1_model: Optional[str] = None, 
+                          player2_model: Optional[str] = None, rounds: Optional[int] = None,
+                          use_majority_vote: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+        """Run AI vs AI game(s) with multiple rounds support and optional majority voting.
         
         Args:
             player1_name: Name for player 1
@@ -1889,6 +1860,8 @@ class OllamaGameManager:
             player1_model: Model for player 1 (defaults to self.model)
             player2_model: Model for player 2 (defaults to self.model)
             rounds: Number of rounds to execute (None = find first available)
+            use_majority_vote: Whether to use majority voting
+            num_voters: Number of voters for majority voting (3-9)
             
         Returns:
             Dictionary with game results
@@ -1899,10 +1872,9 @@ class OllamaGameManager:
         if player2_model is None:
             player2_model = self.model
             
-        # Use new multiple rounds logic
+        # Use new multiple rounds logic with majority vote support
         results = self.execute_multiple_rounds(
-            player1_name, player2_name, player1_model, player2_model, max_turns, rounds,
-            majority_vote_p1, majority_vote_p2, num_voters
+            player1_name, player2_name, player1_model, player2_model, max_turns, rounds, use_majority_vote, num_voters
         )
         
         # For compatibility with existing CLI, adapt results format for single round mode

@@ -84,16 +84,6 @@ Examples:
     parser.add_argument("--player2-name", default="AI Beta",
                        help="Name for player 2 (default: %(default)s)")
     
-    # Majority voting options
-    parser.add_argument("--majority-vote", action="store_true",
-                       help="Enable majority voting for both players")
-    parser.add_argument("--player1-majority", action="store_true",
-                       help="Enable majority voting for player 1 only")
-    parser.add_argument("--player2-majority", action="store_true",
-                       help="Enable majority voting for player 2 only")
-    parser.add_argument("--num-voters", type=int, default=3,
-                       help="Number of voters for majority voting (default: %(default)s)")
-    
     return parser
 
 
@@ -111,10 +101,10 @@ def validate_models(player1_model: str, player2_model: str, verbose: bool = Fals
     if verbose:
         print("🔧 Validating Ollama models...")
     
-    models_to_test = set([player1_model, player2_model])
-    
     try:
         from langchain_ollama import ChatOllama
+        
+        models_to_test = set([player1_model, player2_model])
         
         for model in models_to_test:
             if verbose:
@@ -141,8 +131,7 @@ def validate_models(player1_model: str, player2_model: str, verbose: bool = Fals
 
 
 def run_single_game(game_manager, player1_name: str, player2_name: str, 
-                   max_turns: int, player1_model: str, player2_model: str, verbose: bool = False, rounds: Optional[int] = None,
-                   majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+                   max_turns: int, player1_model: str, player2_model: str, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
     """Run a single AI vs AI game.
     
     Args:
@@ -154,9 +143,6 @@ def run_single_game(game_manager, player1_name: str, player2_name: str,
         player2_model: Model for player 2
         verbose: Whether to print detailed progress
         rounds: Number of rounds to execute (None = find first available)
-        majority_vote_p1: Whether player 1 uses majority voting
-        majority_vote_p2: Whether player 2 uses majority voting  
-        num_voters: Number of voters for majority voting
         
     Returns:
         Dictionary with game results
@@ -175,10 +161,7 @@ def run_single_game(game_manager, player1_name: str, player2_name: str,
         max_turns=max_turns,
         player1_model=player1_model,
         player2_model=player2_model,
-        rounds=rounds,
-        majority_vote_p1=majority_vote_p1,
-        majority_vote_p2=majority_vote_p2,
-        num_voters=num_voters
+        rounds=rounds
     )
     
     end_time = time.time()
@@ -188,8 +171,7 @@ def run_single_game(game_manager, player1_name: str, player2_name: str,
 
 
 def run_tournament(game_manager, player1_name: str, player2_name: str, player1_model: str, player2_model: str,
-                  num_games: int, max_turns: int, verbose: bool = False, quiet: bool = False,
-                  majority_vote_p1: bool = False, majority_vote_p2: bool = False, num_voters: int = 3) -> Dict[str, Any]:
+                  num_games: int, max_turns: int, verbose: bool = False, quiet: bool = False) -> Dict[str, Any]:
     """Run a tournament of multiple games.
     
     Args:
@@ -222,8 +204,7 @@ def run_tournament(game_manager, player1_name: str, player2_name: str, player1_m
             print(f"\n--- Game {game_num}/{num_games} ---")
         
         result = run_single_game(
-            game_manager, player1_name, player2_name, max_turns, player1_model, player2_model, verbose, None,  # Always None for tournament mode
-            majority_vote_p1, majority_vote_p2, num_voters
+            game_manager, player1_name, player2_name, max_turns, player1_model, player2_model, verbose, None  # Always None for tournament mode
         )
         
         results.append(result)
@@ -323,21 +304,6 @@ def main():
     if not validate_models(player1_model, player2_model, args.verbose):
         return 1
 
-    # Check for majority voting mode
-    majority_vote_p1 = args.majority_vote or args.player1_majority
-    majority_vote_p2 = args.majority_vote or args.player2_majority
-    
-    if majority_vote_p1 or majority_vote_p2:
-        voting_info = []
-        if majority_vote_p1:
-            voting_info.append(f"Player 1 ({args.player1_name})")
-        if majority_vote_p2:
-            voting_info.append(f"Player 2 ({args.player2_name})")
-        
-        if args.verbose:
-            print(f"🗳️  Majority vote mode enabled with {args.num_voters} voters")
-            print(f"🗳️  Voting players: {', '.join(voting_info)}")
-
     
     # Initialize game manager 
     game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
@@ -353,8 +319,7 @@ def main():
                 print("\n🚀 Starting tournament...")
             stats = run_tournament(
                 game_manager, args.player1_name, args.player2_name, player1_model, player2_model,
-                args.tournament, args.max_turns, args.verbose, args.quiet,
-                majority_vote_p1, majority_vote_p2, args.num_voters
+                args.tournament, args.max_turns, args.verbose, args.quiet
             )
             
             if not args.quiet:
@@ -373,8 +338,7 @@ def main():
             
             result = run_single_game(
                 game_manager, args.player1_name, args.player2_name,
-                args.max_turns, player1_model, player2_model, args.verbose, args.rounds,
-                majority_vote_p1, majority_vote_p2, args.num_voters
+                args.max_turns, player1_model, player2_model, args.verbose, args.rounds
             )
             
             # Print results
