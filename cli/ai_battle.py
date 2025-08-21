@@ -51,7 +51,11 @@ Examples:
                        help="Ollama model for player 1 (overrides --model)")
     parser.add_argument("--player2-model", 
                        help="Ollama model for player 2 (overrides --model)")
-    
+    parser.add_argument("--player1-port", default="11434",
+                       help="Port for player 1 (default: %(default)s)")
+    parser.add_argument("--player2-port", default="11434",
+                       help="Port for player 2 (default: %(default)s)")
+
     # Game configuration
     parser.add_argument("--max-turns", type=int, default=200,
                        help="Maximum turns per game (default: %(default)s)")
@@ -83,16 +87,22 @@ Examples:
                        help="Name for player 1 (default: %(default)s)")
     parser.add_argument("--player2-name", default="AI Beta",
                        help="Name for player 2 (default: %(default)s)")
+
+    # Majority player flags
+    parser.add_argument("--player1-majority", action="store_true", help="Use MajorityPlayer for player 1")
+    parser.add_argument("--player2-majority", action="store_true", help="Use MajorityPlayer for player 2")
     
     return parser
 
 
-def validate_models(player1_model: str, player2_model: str, verbose: bool = False) -> bool:
+def validate_models(player1_model: str, player2_model: str, player1_host: str, player2_host: str, verbose: bool = False) -> bool:
     """Validate that Ollama models are available.
     
     Args:
         player1_model: Model name for player 1
-        player2_model: Model name for player 2 
+        player2_model: Model name for player 2
+        player1_host: Host URL for player 1
+        player2_host: Host URL for player 2
         verbose: Whether to print detailed validation info
         
     Returns:
@@ -103,13 +113,13 @@ def validate_models(player1_model: str, player2_model: str, verbose: bool = Fals
     
     try:
         from langchain_ollama import ChatOllama
-        
-        models_to_test = set([player1_model, player2_model])
-        
-        for model in models_to_test:
+
+        models_to_test = set([(player1_model, player1_host), (player2_model, player2_host)])
+
+        for model, host in models_to_test:
             if verbose:
-                print(f"  Testing {model}...")
-            test_llm = ChatOllama(model=model, temperature=0)
+                print(f"  Testing {model} on {host}...")
+            test_llm = ChatOllama(model=model, temperature=0, base_url=host)
             response = test_llm.invoke("Say 'Hello'")
             if verbose:
                 print(f"  ✓ {model} accessible")
@@ -125,13 +135,14 @@ def validate_models(player1_model: str, player2_model: str, verbose: bool = Fals
     except Exception as e:
         print(f"❌ Model validation failed: {e}")
         print("Please ensure Ollama is running and models are installed:")
-        for model in models_to_test:
+        for model, _ in models_to_test:
             print(f"  ollama pull {model}")
         return False
 
 
 def run_single_game(game_manager, player1_name: str, player2_name: str, 
-                   max_turns: int, player1_model: str, player2_model: str, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
+                   max_turns: int, player1_model: str, player2_model: str,
+                   player1_host: str, player2_host: str, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
     """Run a single AI vs AI game.
     
     Args:
@@ -171,7 +182,8 @@ def run_single_game(game_manager, player1_name: str, player2_name: str,
 
 
 def run_tournament(game_manager, player1_name: str, player2_name: str, player1_model: str, player2_model: str,
-                  num_games: int, max_turns: int, verbose: bool = False, quiet: bool = False) -> Dict[str, Any]:
+                  player1_host: str, player2_host: str, num_games: int, max_turns: int,
+                  verbose: bool = False, quiet: bool = False) -> Dict[str, Any]:
     """Run a tournament of multiple games.
     
     Args:
@@ -204,7 +216,8 @@ def run_tournament(game_manager, player1_name: str, player2_name: str, player1_m
             print(f"\n--- Game {game_num}/{num_games} ---")
         
         result = run_single_game(
-            game_manager, player1_name, player2_name, max_turns, player1_model, player2_model, verbose, None  # Always None for tournament mode
+            game_manager, player1_name, player2_name, max_turns, player1_model,
+            player2_model, player1_host, player2_host, verbose, None  # Always None for tournament mode
         )
         
         results.append(result)
@@ -296,21 +309,38 @@ def main():
     # Determine models for each player
     player1_model = args.player1_model or args.model
     player2_model = args.player2_model or args.model
-    
+    player1_host = f"http://localhost:{args.player1_port}"
+    player2_host = f"http://localhost:{args.player2_port}"
+
     print("🐟 Aquawar AI vs AI Battle System")
     print("=" * 50)
     
     # Validate models
-    if not validate_models(player1_model, player2_model, args.verbose):
+    if not validate_models(player1_model, player2_model,
+                           player1_host, player2_host, args.verbose):
         return 1
 
     
-    # Initialize game manager 
-    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
-    
+    # Import MajorityPlayer if needed
+    player1_majority = getattr(args, "player1_majority", False)
+    player2_majority = getattr(args, "player2_majority", False)
+    if player1_majority or player2_majority:
+        from aquawar.ai.ollama_majority import MajorityPlayer
+
+    # Patch OllamaGameManager to use MajorityPlayer if requested
+    class PatchedOllamaGameManager(OllamaGameManager):
+        def _make_player(self, player_idx, *args_, **kwargs_):
+            if (player_idx == 0 and player1_majority):
+                return MajorityPlayer(*args_, **kwargs_)
+            elif (player_idx == 1 and player2_majority):
+                return MajorityPlayer(*args_, **kwargs_)
+            else:
+                return super()._make_player(player_idx, *args_, **kwargs_)
+
+    game_manager = PatchedOllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
+
     try:
         if args.tournament:
-            # Tournament mode
             if args.verbose:
                 print(f"🏆 Running tournament: {args.tournament} games")
                 print(f"🤖 Players: {args.player1_name} vs {args.player2_name}")
@@ -319,45 +349,36 @@ def main():
                 print("\n🚀 Starting tournament...")
             stats = run_tournament(
                 game_manager, args.player1_name, args.player2_name, player1_model, player2_model,
-                args.tournament, args.max_turns, args.verbose, args.quiet
+                player1_host, player2_host, args.tournament, args.max_turns,
+                args.verbose, args.quiet
             )
-            
             if not args.quiet:
                 print_tournament_summary(stats, args.player1_name, args.player2_name, 
                                        player1_model, player2_model)
-            
-            # Return non-zero if there were errors
             return 1 if stats['errors'] > 0 else 0
         else:
-            # Single game mode
             if not args.quiet:
                 print(f"🤖 Players: {args.player1_name} vs {args.player2_name}")
                 print(f"🧠 Models: {player1_model} vs {player2_model}")
                 print("🎯 Objective: Play until one player loses all fish")
                 print("\n🚀 Starting game...")
-            
             result = run_single_game(
                 game_manager, args.player1_name, args.player2_name,
-                args.max_turns, player1_model, player2_model, args.verbose, args.rounds
+                args.max_turns, player1_model, player2_model,
+                player1_host, player2_host, args.verbose, args.rounds
             )
-            
-            # Print results
             print("\n" + "=" * 50)
             print("🏆 GAME RESULTS")
             print("=" * 50)
-            
             if result["success"]:
                 winner_name = args.player1_name if result["winner"] == 0 else args.player2_name
                 winner_model = player1_model if result["winner"] == 0 else player2_model
-                
                 print(f"🎉 Winner: {winner_name} ({winner_model})")
                 print(f"📊 Total turns: {result['turns']}")
                 print(f"⏱️ Duration: {result['duration']:.1f} seconds")
                 print(f"💾 Game saved to: {result['save_path']}")
-                
                 if args.verbose:
                     print(f"📝 Full save directory: {Path(args.save_dir) / result['save_path']}")
-                
                 print("\n✅ Battle completed successfully!")
                 return 0
             else:
@@ -368,7 +389,6 @@ def main():
                     print(f"💾 Partial save at: {result['save_path']}")
                 print("\n❌ Battle failed!")
                 return 1
-                
     except KeyboardInterrupt:
         print("\n⚠️ Battle interrupted by user")
         return 1

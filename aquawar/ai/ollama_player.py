@@ -254,6 +254,7 @@ class OllamaPlayer(BasePlayer):
         """Set game manager reference for save functionality."""
         self._game_manager = game_manager
         self._other_player = other_player
+        self.ends_turn = True
 
     @property
     def game_manager(self):
@@ -276,7 +277,7 @@ class OllamaPlayer(BasePlayer):
         if getattr(self, 'debug', False):
             print(f"[DEBUG] {message}")
 
-    def __init__(self, name: str, model: str = "llama3.2:3b", temperature: float = 0.7, top_p: float = 0.9, debug: bool = False):
+    def __init__(self, name: str, model: str = "llama3.2:3b", temperature: float = 0.7, top_p: float = 0.9, host: str = "http://localhost:11434", debug: bool = False):
         """Initialize Ollama player.
         
         Args:
@@ -314,6 +315,7 @@ class OllamaPlayer(BasePlayer):
             model=model,
             temperature=temperature,
             top_p=top_p,
+            base_url=host,
         ).bind_tools(tools)
         # References for save functionality (set by game manager)
         self._game_manager = None
@@ -520,8 +522,9 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     messages = messages.copy() + [last_error]
                     llm_input[1] = ("user", llm_input[1][1] + f"\n\nPREVIOUS ERROR: {last_error}\nPlease correct the issue and try again.")
                 
-                # Increment game turn for each LLM invocation attempt
-                self.game.increment_game_turn()
+                if self.ends_turn:
+                    # Increment game turn for each LLM invocation attempt
+                    self.game.increment_game_turn()
                 
                 response = self.llm.invoke(llm_input)
                 response_dict = json.loads(response.model_dump_json())  # Raw LLM response object
@@ -742,10 +745,11 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         """
         if not self.game or self.player_index is None:
             return GameAction("assertion", False, "No game context set", "invalid action")
-        
-        # Increment game turn for any assertion attempt (valid or invalid)
-        self.game.increment_game_turn()
-        
+
+        if self.ends_turn:
+            # Increment game turn for any assertion attempt (valid or invalid)
+            self.game.increment_game_turn()
+
         prompt = self.game.prompt_for_assertion(self.player_index)
         
         messages = [
@@ -836,11 +840,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         if not self.game or self.player_index is None:
             self._debug_log("No game context set for action")
             return GameAction("action", False, "No game context set", "invalid action")
-        
-        # Increment game turn for any action attempt (valid or invalid)
-        self._debug_log(f"Incrementing game turn for player {self.player_index}")
-        self.game.increment_game_turn()
-        
+
+        if self.ends_turn:
+            # Increment game turn for any action attempt (valid or invalid)
+            self._debug_log(f"Incrementing game turn for player {self.player_index}")
+            self.game.increment_game_turn()
+
         self._debug_log(f"Prompting for action for player {self.player_index}")
         prompt = self.game.prompt_for_action(self.player_index)
         
@@ -1040,9 +1045,10 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         }
         
         try:
-            # Increment game turn for move attempt
-            self.game.increment_game_turn()
-            
+            if self.ends_turn:
+                # Increment game turn for move attempt
+                self.game.increment_game_turn()
+
             # Call LLM
             response = self.llm.invoke(messages)
             context["llm_response"] = json.loads(response.model_dump_json())
@@ -1144,7 +1150,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         except Exception as e:
             # Create error history entry
             context["error"] = str(e)
-            # context["success"] = False
+            context["success"] = False
             
             history_entry = {
                 "player": self.player_index,
