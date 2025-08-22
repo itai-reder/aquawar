@@ -72,9 +72,8 @@ class PersistentGameManager:
             
         return Game.load_game(str(save_path))
     
-
-    
-    def initialize_new_game(self, player1_string: str, player2_string: str, player_names: tuple[str, str], max_tries: int = 3, round_num: int = 1) -> Game:
+    # def initialize_new_game(self, player1_string: str, player2_string: str, player_names: tuple[str, str], max_tries: int = 3, round_num: int = 1) -> Game:
+    def initialize_new_game(self, player1_string: str, player2_string: str, player_names: tuple[str, str], round_num: int = 1) -> Game:
         """Initialize a new game and save it.
         
         Args:
@@ -84,7 +83,8 @@ class PersistentGameManager:
             max_tries: Maximum retry attempts for invalid moves
             round_num: Round number (defaults to 1)
         """
-        game = Game(player_names, debug=self.debug, max_tries=max_tries)
+        # game = Game(player_names, debug=self.debug, max_tries=max_tries)
+        game = Game(player_names, debug=self.debug)
         
         # Create game directory
         game_dir = self.get_game_dir(player1_string, player2_string, round_num)

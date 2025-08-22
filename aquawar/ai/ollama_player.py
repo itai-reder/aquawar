@@ -254,7 +254,6 @@ class OllamaPlayer(BasePlayer):
         """Set game manager reference for save functionality."""
         self._game_manager = game_manager
         self._other_player = other_player
-        self.ends_turn = True
 
     @property
     def game_manager(self):
@@ -265,6 +264,11 @@ class OllamaPlayer(BasePlayer):
     def opponent(self):
         """Get the opponent player reference."""
         return self._other_player
+    
+    @property
+    def player_name(self) -> str:
+        return self.model + " (Single)"
+
     @property
     def player_string(self) -> str:
         """Generate player string for directory naming.
@@ -277,18 +281,31 @@ class OllamaPlayer(BasePlayer):
         if getattr(self, 'debug', False):
             print(f"[DEBUG] {message}")
 
-    def __init__(self, name: str, model: str = "llama3.2:3b", temperature: float = 0.7, top_p: float = 0.9, host: str = "http://localhost:11434", debug: bool = False):
+    def get_player_info(self) -> Dict[str, Any]:
+        """Get player information for saving."""
+        return [{
+            "name": self.player_name,
+            "model": self.model,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_tries": self.max_tries
+        }]
+
+    # def __init__(self, name: str, model: str = "llama3.2:3b", temperature: float = 0.7, top_p: float = 0.9, host: str = "http://localhost:11434", debug: bool = False):
+    def __init__(self, name: str, model: str = "llama3.2:3b", max_tries=3, temperature: float = 0.7, top_p: float = 0.9, host: str = "http://localhost:11434", debug: bool = False):    
         """Initialize Ollama player.
         
         Args:
             name: Player name
-            model: Ollama model to use 
+            model: Ollama model to use
+            max_tries: Maximum retry attempts for invalid moves
             temperature: Temperature for LLM responses
             top_p: Top-p sampling parameter
         """
         super().__init__(name)
         self.debug = debug
         self.model = model
+        self.max_tries = max_tries
         self.temperature = temperature
         self.top_p = top_p
         # Select tools based on model compatibility
@@ -320,7 +337,7 @@ class OllamaPlayer(BasePlayer):
         # References for save functionality (set by game manager)
         self._game_manager = None
         self._other_player = None
-
+        self.ends_turn = True
 
     def _extract_tool_call(self, response: BaseMessage) -> Optional[Dict[str, Any]]:
         """Extract tool call from response if available."""
@@ -1008,13 +1025,13 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         Args:
             phase: "assertion" or "action" or "team_selection"  
             messages: Optional pre-built messages, if None will generate from game state
-            
         Returns:
             Tuple of (history_entry, parsed_move_result, additional_context)
         """
         if not self.game or self.player_index is None:
+            print(f"[DEBUG] make_move: No game context set for move generation (phase={phase}, player={self.player_index})")
             raise ValueError("No game context set for move generation")
-        
+
         # Generate messages if not provided
         if messages is None:
             if phase == "assertion":
@@ -1030,8 +1047,11 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     ("user", f"{prompt}\n\nMake your action using either normal_attack_tool or active_skill_tool.")
                 ]
             else:
+                print(f"[DEBUG] make_move: Unsupported phase for automatic message generation: {phase}")
                 raise ValueError(f"Unsupported phase for automatic message generation: {phase}")
-        
+
+        print(f"[DEBUG] make_move: phase={phase}, player={self.player_index}, messages={[(m[0], str(m[1])[:60]) for m in messages]}")
+
         # Context for tracking move generation
         context = {
             "phase": phase,
@@ -1043,22 +1063,23 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             "move_type": None,
             "success": False,
         }
-        
+
         try:
             if self.ends_turn:
                 # Increment game turn for move attempt
                 self.game.increment_game_turn()
 
             # Call LLM
+            print(f"[DEBUG] make_move: Invoking LLM for phase={phase}, player={self.player_index}")
             response = self.llm.invoke(messages)
             context["llm_response"] = json.loads(response.model_dump_json())
-            
 
             # Extract and validate tool call
             tool_call = self._extract_tool_call(response)
             context["tool_call"] = tool_call
 
             if not tool_call:
+                print(f"[DEBUG] make_move: No tool call made by LLM (phase={phase}, player={self.player_index})")
                 raise RuntimeError("No tool call made by LLM")
 
             tool_name = tool_call['name']
@@ -1077,16 +1098,19 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     fish_name = args.get('fish_name')
 
                     if enemy_index is None or fish_name is None:
+                        print(f"[DEBUG] make_move: Missing assertion parameters from LLM/tool call (phase={phase}, player={self.player_index})")
                         raise RuntimeError("Missing assertion parameters from LLM/tool call")
 
                     try:
                         enemy_index = int(enemy_index)
                     except Exception:
+                        print(f"[DEBUG] make_move: Invalid enemy_index value: {enemy_index} (phase={phase}, player={self.player_index})")
                         raise RuntimeError(f"Invalid enemy_index value: {enemy_index}")
                     context["move_type"] = "assert_fish"
                     context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
                     result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
                 else:
+                    print(f"[DEBUG] make_move: Invalid tool for assertion phase: {tool_name} (phase={phase}, player={self.player_index})")
                     raise RuntimeError(f"Invalid tool for assertion phase: {tool_name}")
 
             elif phase == "action":
@@ -1095,11 +1119,13 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     target_index = args.get('target_index')
 
                     if fish_index is None or target_index is None:
+                        print(f"[DEBUG] make_move: Missing attack parameters from LLM/tool call (phase={phase}, player={self.player_index})")
                         raise RuntimeError("Missing attack parameters from LLM/tool call")
                     try:
                         fish_index = int(fish_index)
                         target_index = int(target_index)
                     except Exception:
+                        print(f"[DEBUG] make_move: Invalid attack indices: fish_index={fish_index}, target_index={target_index} (phase={phase}, player={self.player_index})")
                         raise RuntimeError(f"Invalid attack indices: fish_index={fish_index}, target_index={target_index}")
 
                     context["move_type"] = "normal_attack"
@@ -1111,10 +1137,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     target_index = args.get('target_index')
 
                     if fish_index is None:
+                        print(f"[DEBUG] make_move: Missing fish index for active skill from LLM/tool call (phase={phase}, player={self.player_index})")
                         raise RuntimeError("Missing fish index for active skill from LLM/tool call")
                     try:
                         fish_index = int(fish_index)
                     except Exception:
+                        print(f"[DEBUG] make_move: Invalid fish_index value: {fish_index} (phase={phase}, player={self.player_index})")
                         raise RuntimeError(f"Invalid fish_index value: {fish_index}")
 
                     # Handle optional target_index
@@ -1122,6 +1150,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         try:
                             target_index = int(target_index)
                         except Exception:
+                            print(f"[DEBUG] make_move: Invalid target_index value: {target_index} (phase={phase}, player={self.player_index})")
                             raise RuntimeError(f"Invalid target_index value: {target_index}")
                     else:
                         target_index = None
@@ -1130,10 +1159,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
                     result = self.game.perform_action(self.player_index, fish_index, "ACTIVE", target_index)
                 else:
+                    print(f"[DEBUG] make_move: Invalid tool for action phase: {tool_name} (phase={phase}, player={self.player_index})")
                     raise RuntimeError(f"Invalid tool for action phase: {tool_name}")
             else:
+                print(f"[DEBUG] make_move: Unsupported phase: {phase} (player={self.player_index})")
                 raise RuntimeError(f"Unsupported phase: {phase}")
-            
+
             # Create history entry
             history_entry = {
                 "player": self.player_index,
@@ -1145,13 +1176,13 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 "success": True
             }
             context["success"] = True
+            print(f"[DEBUG] make_move: Completed phase={phase}, player={self.player_index}, turn={self.game.state.game_turn}")
             return history_entry, result, context
-            
+
         except Exception as e:
-            # Create error history entry
             context["error"] = str(e)
             context["success"] = False
-            
+            print(f"[DEBUG] make_move ERROR: {type(e).__name__}: {e} (phase={phase}, player={self.player_index}, turn={self.game.state.game_turn if self.game and hasattr(self.game, 'state') else 'N/A'})")
             history_entry = {
                 "player": self.player_index,
                 "input_messages": messages,
@@ -1161,7 +1192,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 "context": context,
                 "success": False
             }
-            
             return history_entry, str(e), context
     
     def save_turn_pickle(self, file_prefix: str, additional_data: Dict[str, Any] = None) -> str:
@@ -1170,49 +1200,42 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
         Args:
             file_prefix: Prefix for the file (e.g., "turn", "v1", "v2")
             additional_data: Optional additional data to include in save
-            
         Returns:
             Path to saved file
         """
         if not hasattr(self, '_game_manager') or not self._game_manager:
+            print(f"[DEBUG] save_turn_pickle: No game manager available for saving (prefix={file_prefix})")
             raise ValueError("No game manager available for saving")
-        
+
         # Get player strings for directory structure
         if hasattr(self, '_other_player'):
             player1_string = self.player_string
             player2_string = self._other_player.player_string
         else:
-            # Fallback - use model name
             player1_string = self.player_string
             player2_string = self.player_string
-        
+
         # Create players_info for saving
         players_info = {}
         if additional_data and 'players_info' in additional_data:
             players_info = additional_data['players_info']
         else:
-            # Generate basic players_info
-            players_info = {
-                "1": [{"name": f"{self.model} (Single)", "model": self.model, "temperature": self.temperature, "top_p": self.top_p}],
-                "2": [{"name": f"{self.model} (Single)", "model": self.model, "temperature": self.temperature, "top_p": self.top_p}]
-            }
-        
-        # Save with custom prefix by temporarily modifying the save method
+            players_info = self._game_manager._get_players_info(self, self.opponent)
+
         game_turn = self.game.state.game_turn
         round_num = additional_data.get('round_num', 1) if additional_data else 1
-        
-        # Get save paths
+
         game_dir = self._game_manager.persistent_manager.get_game_dir(player1_string, player2_string, round_num)
         game_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Custom save path with specified prefix
+
         save_path = game_dir / f"{file_prefix}_{game_turn:03d}.pkl"
         latest_path = game_dir / "latest.pkl"
-        
-        # Save the game
+
+        print(f"[DEBUG] save_turn_pickle: prefix={file_prefix}, turn={game_turn}, round={round_num}, path={save_path}")
+
         self.game.save_game(str(save_path), players_info)
-        self.game.save_game(str(latest_path), players_info)  # Also save as latest
-        
+        self.game.save_game(str(latest_path), players_info)
+
         return str(save_path)
     
     def end_game_turn(self, history_entry: Dict[str, Any], additional_data: Dict[str, Any] = None) -> None:
@@ -1670,11 +1693,6 @@ class OllamaGameManager:
         
         # Continue the game using existing logic
         return self._execute_game_loop(game, player1, player2, max_turns, round_num)
-        """Build players info dictionary for saving."""
-        return {
-            "1": [{"name": f"{player1.model} (Single)", "model": player1.model, "temperature": player1.temperature, "top_p": player1.top_p}],
-            "2": [{"name": f"{player2.model} (Single)", "model": player2.model, "temperature": player2.temperature, "top_p": player2.top_p}]
-        }
         
     def create_ai_vs_ai_game(self, player1_name: str = "AI Player 1", 
                            player2_name: str = "AI Player 2", player1_model: Optional[str] = None, 
@@ -1902,9 +1920,10 @@ class OllamaGameManager:
             "technical_details": str(exception)
         }
     
-    def run_ai_vs_ai_game(self, player1_name: str = "AI Player 1", player2_name: str = "AI Player 2",
-                         max_turns: int = 100, player1_model: Optional[str] = None, 
-                         player2_model: Optional[str] = None, rounds: Optional[int] = None) -> Dict[str, Any]:
+    def run_ai_vs_ai_game(self,
+                          player1=None, player2=None,
+                          max_turns: int = 100,
+                          rounds: Optional[int] = None) -> Dict[str, Any]:
         """Run AI vs AI game(s) with multiple rounds support.
         
         Args:
@@ -1918,38 +1937,135 @@ class OllamaGameManager:
         Returns:
             Dictionary with game results
         """
-        # Use provided models or default to self.model
-        if player1_model is None:
-            player1_model = self.model
-        if player2_model is None:
-            player2_model = self.model
-            
-        # Use new multiple rounds logic
-        results = self.execute_multiple_rounds(
-            player1_name, player2_name, player1_model, player2_model, max_turns, rounds
-        )
-        
+        # If player objects are provided, use them directly
+        if player1 is not None and player2 is not None:
+            results = self.execute_multiple_rounds_with_players(player1, player2, max_turns, rounds)
+        else:
+            raise ValueError("Player objects must be provided.")
         # For compatibility with existing CLI, adapt results format for single round mode
         if rounds is None and results["round_results"]:
-            # Return the first executed round's result for single-round compatibility
             for round_result in results["round_results"]:
                 if round_result["action"] == "executed":
                     single_result = round_result["result"]
-                    # Add save_path for CLI compatibility
                     if "save_path" not in single_result:
                         single_result["save_path"] = round_result["path"]
                     return single_result
-            
-            # If no rounds were executed, return summary
             return {
                 "success": results["success"],
                 "error": results.get("error", "No rounds needed execution"),
                 "rounds_skipped": results["rounds_skipped"],
                 "save_path": f"{results['player1_string']}/{results['player2_string']}/"
             }
-        
-        # For multi-round mode, return full results
         return results
+
+    def execute_multiple_rounds_with_players(self, player1, player2, max_turns: int = 200, rounds: Optional[int] = None) -> Dict[str, Any]:
+        """Execute multiple rounds using pre-instantiated player objects."""
+        player1_string = player1.player_string
+        player2_string = player2.player_string
+        results = {
+            "player1_string": player1_string,
+            "player2_string": player2_string,
+            "total_rounds_executed": 0,
+            "rounds_completed": 0,
+            "rounds_skipped": 0,
+            "rounds_failed": 0,
+            "round_results": [],
+            "success": True,
+            "error": None
+        }
+        if rounds is None:
+            round_num = 1
+            while True:
+                status = self.check_round_status(player1_string, player2_string, round_num)
+                if status["error"]:
+                    results["error"] = status["error"]
+                    results["success"] = False
+                    break
+                if not status["needs_execution"]:
+                    results["rounds_skipped"] += 1
+                    results["round_results"].append({
+                        "round": round_num,
+                        "action": "skipped",
+                        "status": status["status"],
+                        "path": status["game_dir"]
+                    })
+                    round_num += 1
+                    continue
+                if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
+                    result = self.resume_existing_round_with_players(player1, player2, round_num, max_turns)
+                else:
+                    result = self.run_single_round_with_players(player1, player2, round_num, max_turns)
+                results["total_rounds_executed"] += 1
+                results["round_results"].append({
+                    "round": round_num,
+                    "action": "executed",
+                    "result": result,
+                    "path": status["game_dir"]
+                })
+                if result["success"]:
+                    results["rounds_completed"] += 1
+                    break
+                else:
+                    results["rounds_failed"] += 1
+                    break
+        else:
+            for round_num in range(1, rounds + 1):
+                status = self.check_round_status(player1_string, player2_string, round_num)
+                if status["error"]:
+                    results["error"] = status["error"]
+                    break
+                if not status["needs_execution"]:
+                    results["rounds_skipped"] += 1
+                    results["round_results"].append({
+                        "round": round_num,
+                        "action": "skipped",
+                        "status": status["status"],
+                        "path": status["game_dir"]
+                    })
+                    continue
+                if status["exists"] and status["has_latest"] and status["status"] == "ongoing":
+                    result = self.resume_existing_round_with_players(player1, player2, round_num, max_turns)
+                else:
+                    result = self.run_single_round_with_players(player1, player2, round_num, max_turns)
+                results["total_rounds_executed"] += 1
+                results["round_results"].append({
+                    "round": round_num,
+                    "action": "executed",
+                    "result": result,
+                    "path": status["game_dir"]
+                })
+                if result["success"]:
+                    results["rounds_completed"] += 1
+                else:
+                    results["rounds_failed"] += 1
+        return results
+
+    def run_single_round_with_players(self, player1, player2, round_num: int, max_turns: int = 200) -> Dict[str, Any]:
+        """Run a single round (new game) with player objects."""
+        player1.set_game_manager(self, player2)
+        player2.set_game_manager(self, player1)
+        game_dir = self.persistent_manager.get_game_dir(player1.player_string, player2.player_string, round_num)
+        if game_dir.exists():
+            import shutil
+            shutil.rmtree(game_dir)
+        game = self.persistent_manager.initialize_new_game(
+            player1.player_string,
+            player2.player_string,
+            (player1.name, player2.name),
+            # self.max_tries,
+            round_num
+        )
+        player1.set_game_context(game, 0)
+        player2.set_game_context(game, 1)
+        return self._execute_game_loop(game, player1, player2, max_turns, round_num)
+
+    def resume_existing_round_with_players(self, player1, player2, round_num: int, max_turns: int = 200) -> Dict[str, Any]:
+        player1.set_game_manager(self, player2)
+        player2.set_game_manager(self, player1)
+        game = self.persistent_manager.load_game_state(player1.player_string, player2.player_string, round_num)
+        player1.set_game_context(game, 0)
+        player2.set_game_context(game, 1)
+        return self._execute_game_loop(game, player1, player2, max_turns, round_num)
     
     def _display_team_status(self, game: Game):
         """Display current status of both teams."""
@@ -1961,30 +2077,33 @@ class OllamaGameManager:
                 print(f"{player.name}: {living_count}/4 fish alive, {total_hp} total HP")
         print("-------------------")
 
-    def _get_players_info(self, player1: OllamaPlayer, player2: OllamaPlayer) -> Dict[str, Any]:
+    def _get_players_info(self, player1: BasePlayer, player2: BasePlayer) -> Dict[str, Any]:
         """Build players info dictionary for saving."""
         return {
-            "1": [{"name": f"{player1.model} (Single)", "model": player1.model, "temperature": player1.temperature, "top_p": player1.top_p}],
-            "2": [{"name": f"{player2.model} (Single)", "model": player2.model, "temperature": player2.temperature, "top_p": player2.top_p}]
+            # "1": [{"name": f"{player1.model} (Single)", "model": player1.model, "temperature": player1.temperature, "top_p": player1.top_p}],
+            # "2": [{"name": f"{player2.model} (Single)", "model": player2.model, "temperature": player2.temperature, "top_p": player2.top_p}]
+            "1": player1.get_player_info(),
+            "2": player2.get_player_info()
         }
 
-    def _execute_game_loop(self, game: Game, player1: OllamaPlayer, player2: OllamaPlayer, 
+    def _execute_game_loop(self, game: Game, player1: BasePlayer, player2: BasePlayer, 
                           max_turns: int, round_num: int) -> Dict[str, Any]:
         """Execute the main game loop for a round.
         
         Args:
             game: Game instance
             player1: Player 1
-            player2: Player 2 
+            player2: Player 2 current_player
             max_turns: Maximum turns per game
             round_num: Round number
             
         Returns:
             Dictionary with game results
         """
+        self._debug_log(f"=== Starting game loop for round {round_num} ===")
         players = [player1, player2]
         players_info = self._get_players_info(player1, player2)
-
+        self._debug_log(f"Players:\n{players_info['1']}\n{players_info['2']}")
         # Attempt counter
         attempt = 0
         
@@ -2005,7 +2124,8 @@ class OllamaGameManager:
                             def save_callback():
                                 self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                             
-                            action = player.make_team_selection(available_fish, self.max_tries, save_callback)
+                            # action = player.make_team_selection(available_fish, self.max_tries, save_callback)
+                            action = player.make_team_selection(available_fish, player.max_tries, save_callback)
                             
                             if not action.success:
                                 print(f"❌ Team selection failed for {player.name}: {action.message}")
@@ -2071,8 +2191,9 @@ class OllamaGameManager:
                 self._debug_log(f"Starting turn execution - Game turn: {game_turn}, Current player: {current_player_idx}, Phase: {game.state.phase}")
                 success = False
                 
-                # for attempt in range(self.max_tries):
-                if attempt < self.max_tries:
+                # if attempt < self.max_tries:
+                if attempt < current_player.max_tries:
+
                     attempt += 1
                     # Create turn context for documentation
                     turn_context = {
@@ -2084,8 +2205,8 @@ class OllamaGameManager:
                         "success": False,
                         "error": None
                     }
-                    # self._debug_log(f"Attempt {attempt + 1}/{self.max_tries}")
-                    self._debug_log(f"Attempt {attempt}/{self.max_tries}")
+                    # self._debug_log(f"Attempt {attempt}/{self.max_tries}")
+                    self._debug_log(f"Attempt {attempt}/{current_player.max_tries}")
                     
                     try:
                         # Business logic with context capture
@@ -2110,6 +2231,7 @@ class OllamaGameManager:
                         turn_context["result"] = result
                         
                         # Document successful attempt with correct attempt number
+                        player = player1 if current_player_idx == 0 else player2
                         game.add_history_entry_unified(
                             current_player_idx,  # player_index (0-based)
                             context.get("prompts", []),  # input_messages from context
@@ -2122,7 +2244,9 @@ class OllamaGameManager:
                             f"Turn {game.state.game_turn}: {game.state.phase} - {result}",  # move_description
                             # attempt=attempt+1,
                             attempt=attempt,
-                            max_attempts=self.max_tries
+                            # max_attempts=self.max_tries,
+                            max_attempts=current_player.max_tries,
+                            ends_turn=player.ends_turn
                         )
                         
                         success = context.get("success", False)
@@ -2130,7 +2254,8 @@ class OllamaGameManager:
                             attempt = 0
                             self._debug_log("Turn successful, resetting attempts counter")
                         else:
-                            self._debug_log(f"Turn failed, {self.max_tries - attempt} attempts remaining")
+                            # self._debug_log(f"Turn failed, {self.max_tries - attempt} attempts remaining")
+                            self._debug_log(f"Turn failed, {current_player.max_tries - attempt} attempts remaining")
                         # self._debug_log("Turn successful, breaking retry loop")
                         # success = True
                         # break
@@ -2143,7 +2268,9 @@ class OllamaGameManager:
                         # NEW: Using unified history function called directly in business logic
                         
                         # Process error for retry logic
-                        error_info = self._process_turn_error(e, attempt+1, self.max_tries, current_player_idx, game, player1, player2, players_info)
+                        # error_info = self._process_turn_error(e, attempt+1, self.max_tries, current_player_idx, game, player1, player2, players_info)
+                        error_info = self._process_turn_error(e, attempt+1, current_player.max_tries, current_player_idx, game, player1, player2, players_info)
+                        
                         print(f"❌ Turn failed: {error_info['user_message']}")
                         
                         # Save after each failed turn attempt 
@@ -2153,17 +2280,21 @@ class OllamaGameManager:
                         except Exception as save_error:
                             self._debug_log(f"Failed to save after failed turn attempt {attempt + 1}: {save_error}")
                         
-                        if attempt < self.max_tries - 1:
-                            print(f"Retrying... ({attempt + 2}/{self.max_tries})")
+                        # if attempt < self.max_tries - 1:
+                            # print(f"Retrying... ({attempt + 2}/{self.max_tries})")
+                        if attempt < current_player.max_tries - 1:
+                            print(f"Retrying... ({attempt + 2}/{current_player.max_tries})")
                 
-                if not success and attempt >= self.max_tries:
+                # if not success and attempt >= self.max_tries:
+                if not success and attempt >= current_player.max_tries:
                     # print(f"❌ Turn failed after {self.max_tries} attempts. Terminating game.")
                     print(f"❌ Turn failed after {attempt} attempts. Terminating game.")
                     game._update_evaluation_game_status("error")
                     self.persistent_manager.save_game_state(game, player1.player_string, player2.player_string, round_num, players_info)
                     return {
                         "success": False,
-                        "error": f"Turn failed after {self.max_tries} attempts",
+                        # "error": f"Turn failed after {self.max_tries} attempts",
+                        "error": f"Turn failed after {current_player.max_tries} attempts",
                         "turns": game_turn,
                         "save_path": f"{player1.player_string}/{player2.player_string}/round_{round_num:03d}/"
                     }

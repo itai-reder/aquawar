@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 # Add the project root to path for now (until proper package installation)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from aquawar.ai.ollama_player import OllamaGameManager
+from aquawar.ai.ollama_player import OllamaGameManager, OllamaPlayer
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -140,9 +140,7 @@ def validate_models(player1_model: str, player2_model: str, player1_host: str, p
         return False
 
 
-def run_single_game(game_manager, player1_name: str, player2_name: str, 
-                   max_turns: int, player1_model: str, player2_model: str,
-                   player1_host: str, player2_host: str, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
+def run_single_game(game_manager, player1, player2, max_turns: int, verbose: bool = False, rounds: Optional[int] = None) -> Dict[str, Any]:
     """Run a single AI vs AI game.
     
     Args:
@@ -159,30 +157,23 @@ def run_single_game(game_manager, player1_name: str, player2_name: str,
         Dictionary with game results
     """
     if verbose:
-        # players, max turns, rounds
-        print(f"🎮 Starting game: {player1_name} vs {player2_name}")
+        print(f"🎮 Starting game: {player1.name} vs {player2.name}")
         print(f"⏳ Max turns: {max_turns}")
         print(f"🔄 Rounds: {rounds if rounds is not None else 'All available'}")
 
     start_time = time.time()
-    
     result = game_manager.run_ai_vs_ai_game(
-        player1_name=player1_name,
-        player2_name=player2_name,
+        player1=player1,
+        player2=player2,
         max_turns=max_turns,
-        player1_model=player1_model,
-        player2_model=player2_model,
         rounds=rounds
     )
-    
     end_time = time.time()
     result["duration"] = end_time - start_time
-    
     return result
 
 
-def run_tournament(game_manager, player1_name: str, player2_name: str, player1_model: str, player2_model: str,
-                  player1_host: str, player2_host: str, num_games: int, max_turns: int,
+def run_tournament(game_manager, player1, player2, num_games: int, max_turns: int,
                   verbose: bool = False, quiet: bool = False) -> Dict[str, Any]:
     """Run a tournament of multiple games.
     
@@ -202,7 +193,7 @@ def run_tournament(game_manager, player1_name: str, player2_name: str, player1_m
     """
     if not quiet:
         print(f"🏆 Starting tournament: {num_games} games")
-        print(f"🤖 Players: {player1_name} vs {player2_name}")
+        print(f"🤖 Players: {player1.name} vs {player2.name}")
     
     results = []
     player1_wins = 0
@@ -214,27 +205,21 @@ def run_tournament(game_manager, player1_name: str, player2_name: str, player1_m
     for game_num in range(1, num_games + 1):
         if not quiet:
             print(f"\n--- Game {game_num}/{num_games} ---")
-        
         result = run_single_game(
-            game_manager, player1_name, player2_name, max_turns, player1_model,
-            player2_model, player1_host, player2_host, verbose, None  # Always None for tournament mode
+            game_manager, player1, player2, max_turns, verbose, None
         )
-        
         results.append(result)
         total_duration += result.get("duration", 0)
-        
         if result["success"]:
             winner = result["winner"]
             turns = result["turns"]
             total_turns += turns
-            
-            if winner == 0:  # Player 1 wins
+            if winner == 0:
                 player1_wins += 1
-                winner_name = player1_name
-            else:  # Player 2 wins
+                winner_name = player1.name
+            else:
                 player2_wins += 1
-                winner_name = player2_name
-            
+                winner_name = player2.name
             if not quiet:
                 print(f"🎉 Winner: {winner_name} ({turns} turns, {result['duration']:.1f}s)")
         else:
@@ -264,16 +249,12 @@ def run_tournament(game_manager, player1_name: str, player2_name: str, player1_m
     return tournament_stats
 
 
-def print_tournament_summary(stats: Dict[str, Any], player1_name: str, player2_name: str, 
-                           player1_model: str, player2_model: str):
+def print_tournament_summary(stats: Dict[str, Any], player1, player2):
     """Print tournament summary statistics.
-    
     Args:
         stats: Tournament statistics dictionary
-        player1_name: Name of player 1
-        player2_name: Name of player 2
-        player1_model: Model used for player 1
-        player2_model: Model used for player 2
+        player1: Player 1 object
+        player2: Player 2 object
     """
     print("\n" + "=" * 60)
     print("🏆 TOURNAMENT RESULTS")
@@ -281,20 +262,16 @@ def print_tournament_summary(stats: Dict[str, Any], player1_name: str, player2_n
     print(f"📊 Games: {stats['completed_games']}/{stats['num_games']} completed")
     if stats['errors'] > 0:
         print(f"⚠️ Errors: {stats['errors']}")
-    
     print(f"\n🤖 Player Performance:")
-    print(f"  {player1_name} ({player1_model}): {stats['player1_wins']} wins ({stats['player1_win_rate']:.1%})")
-    print(f"  {player2_name} ({player2_model}): {stats['player2_wins']} wins ({stats['player2_win_rate']:.1%})")
-    
+    print(f"  {player1.name}: {stats['player1_wins']} wins ({stats['player1_win_rate']:.1%})")
+    print(f"  {player2.name}: {stats['player2_wins']} wins ({stats['player2_win_rate']:.1%})")
     if stats['player1_wins'] > stats['player2_wins']:
-        winner = f"{player1_name} ({player1_model})"
+        winner = f"{player1.name}"
     elif stats['player2_wins'] > stats['player1_wins']:
-        winner = f"{player2_name} ({player2_model})"
+        winner = f"{player2.name}"
     else:
         winner = "TIE"
-    
     print(f"\n🎉 Overall Winner: {winner}")
-    
     print(f"\n📈 Statistics:")
     print(f"  Average game length: {stats['avg_turns']:.1f} turns")
     print(f"  Average game duration: {stats['avg_duration']:.1f} seconds")
@@ -324,54 +301,52 @@ def main():
     # Import MajorityPlayer if needed
     player1_majority = getattr(args, "player1_majority", False)
     player2_majority = getattr(args, "player2_majority", False)
+    MajorityPlayer = None
     if player1_majority or player2_majority:
         from aquawar.ai.ollama_majority import MajorityPlayer
 
-    # Patch OllamaGameManager to use MajorityPlayer if requested
-    class PatchedOllamaGameManager(OllamaGameManager):
-        def _make_player(self, player_idx, *args_, **kwargs_):
-            if (player_idx == 0 and player1_majority):
-                return MajorityPlayer(*args_, **kwargs_)
-            elif (player_idx == 1 and player2_majority):
-                return MajorityPlayer(*args_, **kwargs_)
-            else:
-                return super()._make_player(player_idx, *args_, **kwargs_)
+    # Instantiate player objects
+    if player1_majority:
+        player1 = MajorityPlayer(args.player1_name, model=player1_model, debug=args.debug)
+    else:
+        player1 = OllamaPlayer(args.player1_name, model=player1_model, debug=args.debug)
+    if player2_majority:
+        player2 = MajorityPlayer(args.player2_name, model=player2_model, debug=args.debug)
+    else:
+        player2 = OllamaPlayer(args.player2_name, model=player2_model, debug=args.debug)
 
-    game_manager = PatchedOllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
+    game_manager = OllamaGameManager(save_dir=args.save_dir, model=player1_model, debug=args.debug, max_tries=args.max_tries)
 
     try:
         if args.tournament:
             if args.verbose:
                 print(f"🏆 Running tournament: {args.tournament} games")
-                print(f"🤖 Players: {args.player1_name} vs {args.player2_name}")
+                print(f"🤖 Players: {player1.name} vs {player2.name}")
                 print(f"🧠 Models: {player1_model} vs {player2_model}")
                 print(f"🎯 Objective: Play until one player loses all fish")
                 print("\n🚀 Starting tournament...")
             stats = run_tournament(
-                game_manager, args.player1_name, args.player2_name, player1_model, player2_model,
-                player1_host, player2_host, args.tournament, args.max_turns,
+                game_manager, player1, player2, args.tournament, args.max_turns,
                 args.verbose, args.quiet
             )
             if not args.quiet:
-                print_tournament_summary(stats, args.player1_name, args.player2_name, 
-                                       player1_model, player2_model)
+                print_tournament_summary(stats, player1, player2)
             return 1 if stats['errors'] > 0 else 0
         else:
             if not args.quiet:
-                print(f"🤖 Players: {args.player1_name} vs {args.player2_name}")
+                print(f"🤖 Players: {player1.name} vs {player2.name}")
                 print(f"🧠 Models: {player1_model} vs {player2_model}")
                 print("🎯 Objective: Play until one player loses all fish")
                 print("\n🚀 Starting game...")
             result = run_single_game(
-                game_manager, args.player1_name, args.player2_name,
-                args.max_turns, player1_model, player2_model,
-                player1_host, player2_host, args.verbose, args.rounds
+                game_manager, player1, player2,
+                args.max_turns, args.verbose, args.rounds
             )
             print("\n" + "=" * 50)
             print("🏆 GAME RESULTS")
             print("=" * 50)
             if result["success"]:
-                winner_name = args.player1_name if result["winner"] == 0 else args.player2_name
+                winner_name = player1.name if result["winner"] == 0 else player2.name
                 winner_model = player1_model if result["winner"] == 0 else player2_model
                 print(f"🎉 Winner: {winner_name} ({winner_model})")
                 print(f"📊 Total turns: {result['turns']}")

@@ -60,7 +60,7 @@ class GameState:
     player_turn: int = 1  # Increments when both players complete assertion+action phases
     phase: str = "assertion"  # "assertion" or "action"
     current_player: int = 1  # Who needs to make a move right now (1 or 2)
-    max_tries: int = 3  # Maximum retry attempts for invalid moves
+    # max_tries: int = 3  # Maximum retry attempts for invalid moves
 
     def team_of(self, fish: Fish) -> Team:
         for p in self.players:
@@ -100,8 +100,10 @@ class Game:
         if self.debug:
             print(f"[GAME DEBUG] {message}")
     
-    def __init__(self, player_names: Tuple[str, str], debug: bool = False, max_tries: int = 3):
-        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])], max_tries=max_tries)
+    # def __init__(self, player_names: Tuple[str, str], debug: bool = False, max_tries: int = 3):
+    def __init__(self, player_names: Tuple[str, str], debug: bool = False):
+        # self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])], max_tries=max_tries)
+        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])])
         self.state.current_player = 1  # Player 1 starts first
         self.history = []  # List[Dict] to track turn metadata
         self.current_turn_damage = {"dealt": 0, "taken": 0}  # Track damage for current turn
@@ -623,7 +625,7 @@ All fish: 400 HP, 100 ATK base
             'player_turn': self.state.player_turn,
             'phase': self.state.phase,
             'current_player': self.state.current_player,
-            'max_tries': self.state.max_tries
+            # 'max_tries': self.state.max_tries
         }
     
     def _serialize_team(self, team: Team) -> Dict[str, Any]:
@@ -703,7 +705,7 @@ All fish: 400 HP, 100 ATK base
             player_turn=state_data.get('player_turn', 1),
             phase=state_data.get('phase', 'assertion'),  # Default to assertion for backward compatibility
             current_player=state_data.get('current_player', 1),  # Default to player 1 for backward compatibility
-            max_tries=state_data.get('max_tries', 3)  # Default to 3 for backward compatibility
+            # max_tries=state_data.get('max_tries', 3)  # Default to 3 for backward compatibility
         )
 
     # ------------------------------------------------------------------
@@ -773,7 +775,8 @@ All fish: 400 HP, 100 ATK base
     
     def add_history_entry_unified(self, player_index: int, input_messages: List[Any], response: Dict[str, Any], 
                                  valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0, 
-                                 attempt: int = 1, max_attempts: int = 1, error_details: Optional[Dict] = None) -> None:
+                                 attempt: int = 1, max_attempts: int = 1, error_details: Optional[Dict] = None,
+                                 ends_turn = True) -> None:
         """Unified history entry function that fixes double increment and message mutation bugs."""
         
         self._debug_log(f"add_history_entry_unified called: player_index={player_index}, valid={valid}, move={move[:25]}..., attempt={attempt}/{max_attempts}")
@@ -806,7 +809,10 @@ All fish: 400 HP, 100 ATK base
         if error_details:
             history_entry["error_details"] = error_details
         self._debug_log(f"Adding history entry: ({len(self.history)} -> {len(self.history) + 1})")
-        self.history.append(history_entry)
+        if ends_turn:
+            self.history.append(history_entry)
+        #     return self.history
+        # return self.history + [history_entry]
 
 
     def _track_invalid_move_from_move_description(self, player_idx: int, move_description: str) -> None:
