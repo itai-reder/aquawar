@@ -7,8 +7,11 @@ OllamaVoter and MajorityPlayer classes for Aquawar majority voting logic.
 
 
 from .ollama_player import OllamaPlayer
+from ..persistent import PersistentGameManager
 from pathlib import Path
 from typing import List, Dict, Any
+
+from copy import deepcopy
 
 class OllamaVoter(OllamaPlayer):
     """
@@ -18,16 +21,60 @@ class OllamaVoter(OllamaPlayer):
     - Does NOT call end_game_turn or update main game history
     - Saves v{i}_###.pkl and latest.pkl after every attempt, using same players_info logic as OllamaPlayer
     """
-    def __init__(self, voter_index, *args, **kwargs):
+    def __init__(self, majority_player, voter_index, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.majority_player = majority_player
         self.voter_index = voter_index
         self.ends_turn = False  # Voters never increment game turn
         self.max_tries = 1
+        self.pickle_prefix = f"v{self.voter_index}"
+
+    @property
+    def player_name(self):
+        return f"{self.model} (Voter {self.voter_index + 1})"
+
+    @property
+    def player_string(self):
+        """Generate player string for directory naming."""
+        return self.majority_player.player_string
+
+    @property
+    def opponent(self):
+        return self._other_player
+
+    def save_pseudo_game_state(self):
+        """Save the voter game state to a pickle file."""
+        self._debug_log(f"Saving voter {self.voter_index} game state at turn {self.game.state.game_turn}")
+        if self.player_index == 0:
+            player1 = self
+            player2 = self._other_player
+        else:
+            player1 = self._other_player
+            player2 = self
+        player1_string = player1.player_string
+        player2_string = player2.player_string
+        round_num = self.game.state.round_no
+        players_info = self.game_manager._get_players_info(player1, player2)
+        self.game_manager.persistent_manager.save_game_state(self.game, player1_string, player2_string, round_num, players_info, self.pickle_prefix)
+
+    def set_pseudo_game(self, game, game_manager):
+        pseudo_game = deepcopy(game)
+        self.set_game_context(pseudo_game, self.player_index)
+
+        # self._other_player = deepcopy(opponent)
+        # self._other_player.set_game_context(pseudo_game, 1 - self.player_index)
+
+        pseudo_game_manager = deepcopy(game_manager)
+        pseudo_game_manager._set_turn_prefix(self.pickle_prefix)
+        self.set_game_manager(pseudo_game_manager, self._other_player)
+
+    def get_pseudo_game(self):
+        return self.game
 
     def get_player_info(self) -> Dict[str, Any]:
         """Get player information for saving."""
         return {
-            "name": self.player_name(),
+            "name": self.player_name,
             "model": self.model,
             "temperature": self.temperature,
             "top_p": self.top_p,
@@ -37,71 +84,6 @@ class OllamaVoter(OllamaPlayer):
     def set_index(self, voter_index):
         self.voter_index = voter_index
 
-    def make_voter_move(self, phase: str, messages=None, save_dir=None, round_num=1, additional_data=None):
-        """
-        Make a single move (no retries), save as v{i}_###.pkl and latest.pkl using OllamaPlayer.save_turn_pickle, always, even on error.
-        Args:
-            phase: 'assertion' or 'action'
-            messages: Optional messages for LLM
-            save_dir: Directory to save pickle files
-            round_num: Current round number
-            additional_data: Optional dict for players_info, etc.
-        Returns:
-            (history_entry, parsed_move_result, context)
-        """
-        history_entry = None
-        result = None
-        context = None
-        error = None
-        try:
-            history_entry, result, context = self.make_move(phase, messages)
-            # if self.debug:
-            #     print(f"[Voter {self.voter_index}] make_move succeeded for phase '{phase}'")
-        except Exception as e:
-            error = e
-            context = {
-                "error_location": f"{phase}_execution",
-                "error": str(e)
-            }
-            history_entry = {
-                "player": self.player_index + 1 if self.player_index is not None else 1,
-                "game_turn": self.game.state.game_turn if self.game and hasattr(self.game, 'state') else 0,
-                "player_turn": getattr(self.game.state, 'player_turn', 0) if self.game and hasattr(self.game, 'state') else 0,
-                "phase": phase,
-                "attempt": 1,
-                "input_messages": messages if messages is not None else [],
-                "response": {},
-                "tool_call": None,
-                "action_type": None,
-                "raw_parameters": {},
-                "validated_parameters": {},
-                "success": False,
-                "result": None,
-                "error": {
-                    "exception": str(e),
-                    "exception_type": type(e).__name__,
-                    "error_location": f"{phase}_execution",
-                    "category": "voter_error"
-                },
-                "damage_dealt": 0,
-                "damage_taken": 0,
-                "timestamp": __import__('time').time(),
-                "valid": False,
-                "move": None
-            }
-            if self.debug:
-                print(f"[Voter {self.voter_index}] make_move ERROR in phase '{phase}': {type(e).__name__}: {e}")
-        finally:
-            # Use OllamaPlayer.save_turn_pickle to save as v{i}_NNN.pkl and latest.pkl, never advancing the game turn
-            voter_prefix = f"v{self.voter_index}"
-            # Use game_turn+1 for the filename, but do NOT increment the game state
-            # Pass round_num and additional_data for correct directory and players_info
-            self.save_turn_pickle(voter_prefix, additional_data)
-            if self.debug:
-                print(f"[Voter {self.voter_index}] Saved via save_turn_pickle with prefix '{voter_prefix}'")
-        return history_entry, result, context
-
-# MajorityPlayer stub (to be implemented)
 import pickle
 from collections import Counter
 
@@ -115,83 +97,15 @@ class MajorityPlayer(BasePlayer):
         Context can include details of the vote for debugging.
         """
         # Use the same logic as make_assertion, but also return context
-        turn = self.game.state.game_turn if self.game and hasattr(self.game, 'state') else 1
-        voter_results = []
-        for i, voter in enumerate(self.voters):
-            voter.set_index(i)
-            voter.ends_turn = False
-            result = voter.make_voter_move(phase="assertion", save_dir=self._get_game_dir().parent.parent.parent, round_num=self.game.round_num)
-            history_entry, parsed_move_result, context = result
-            valid = history_entry.get('valid', False) if isinstance(history_entry, dict) else False
-            move_message = history_entry.get('move') if isinstance(history_entry, dict) else None
-            class DummyResult:
-                def __init__(self, success, message):
-                    self.success = success
-                    self.message = message
-            voter_results.append((i, DummyResult(valid, move_message), voter, result))
-        valid_moves = [(i, r, v, res) for i, r, v, res in voter_results if r.success]
-        if not valid_moves:
-            msg = f"All {len(voter_results)} voters made invalid moves for phase 'assertion' at turn {turn}. Game terminated."
-            if self.game and hasattr(self.game, '_update_evaluation_game_status'):
-                self.game._update_evaluation_game_status("error")
-            return GameAction("assertion", False, msg, "invalid action"), {"voter_results": voter_results}
-        from collections import Counter
-        move_list = [r.message for _, r, _, _ in valid_moves]
-        counter = Counter(move_list)
-        majority_move, count = counter.most_common(1)[0]
-        for i, r, v, res in valid_moves:
-            if r.message == majority_move:
-                self._save_majority_turn(v.game, turn)
-                self._advance_turn()
-                return GameAction("assertion", True, f"Majority move: {majority_move}", "valid"), {"majority_move": majority_move, "voter_results": voter_results}
-        i, r, v, res = valid_moves[0]
-        self._save_majority_turn(v.game, turn)
-        self._advance_turn()
-        return GameAction("assertion", True, f"Majority move: {r.message}", "valid"), {"majority_move": r.message, "voter_results": voter_results}
+        pass
 
     def make_action_simple_with_context(self):
         """
         Run the majority voting logic for action phase and return (result, context).
         Context can include details of the vote for debugging.
         """
-        turn = self.game.state.game_turn if self.game and hasattr(self.game, 'state') else 1
-        voter_results = []
-        for i, voter in enumerate(self.voters):
-            voter.set_index(i)
-            voter.ends_turn = False
-            result = voter.make_voter_move(phase="action", save_dir=self._get_game_dir().parent.parent.parent, round_num=self.game.round_num)
-            history_entry, parsed_move_result, context = result
-            valid = history_entry.get('valid', False) if isinstance(history_entry, dict) else False
-            move_message = history_entry.get('move') if isinstance(history_entry, dict) else None
-            class DummyResult:
-                def __init__(self, success, message):
-                    self.success = success
-                    self.message = message
-            voter_results.append((i, DummyResult(valid, move_message), voter, result))
-        valid_moves = [(i, r, v, res) for i, r, v, res in voter_results if r.success]
-        if not valid_moves:
-            msg = f"All {len(voter_results)} voters made invalid moves for phase 'action' at turn {turn}. Game terminated."
-            if self.game and hasattr(self.game, '_update_evaluation_game_status'):
-                self.game._update_evaluation_game_status("error")
-            return GameAction("action", False, msg, "invalid action"), {"voter_results": voter_results}
-        from collections import Counter
-        move_list = [r.message for _, r, _, _ in valid_moves]
-        counter = Counter(move_list)
-        majority_move, count = counter.most_common(1)[0]
-        for i, r, v, res in valid_moves:
-            if r.message == majority_move:
-                self._save_majority_turn(v.game, turn)
-                self._advance_turn()
-                return GameAction("action", True, f"Majority move: {majority_move}", "valid"), {"majority_move": majority_move, "voter_results": voter_results}
-        i, r, v, res = valid_moves[0]
-        self._save_majority_turn(v.game, turn)
-        self._advance_turn()
-        return GameAction("action", True, f"Majority move: {r.message}", "valid"), {"majority_move": r.message, "voter_results": voter_results}
-    """
-    Aggregates moves from multiple OllamaVoters, selects the majority move, and saves as turn_###.pkl.
-    Compatible with the AI manager and CLI.
-    """
-    # def __init__(self, name: str, model: str = "llama3.2:3b", temperature: float = 0.7, top_p: float = 0.9, debug: bool = False, max_tries: int = 3, **kwargs):
+        pass
+    
     def __init__(self, name: str, model: str = "llama3.2:3b", max_tries: int = 3, temperature: float = 0.7, top_p: float = 0.9, debug: bool = False, **kwargs):
         super().__init__(name)
         self.model = model
@@ -203,10 +117,13 @@ class MajorityPlayer(BasePlayer):
         self._other_player = None
         self.game = None
         self.player_index = None
+        self.pickle_prefix = "turn"
         # Create voter agents
-        self.voters = [OllamaVoter(i, name=f"{name} Voter {i+1}", model=model, temperature=temperature, top_p=top_p, debug=debug) for i in range(self.max_tries)]
+        self.voters = [OllamaVoter(self, i, name=f"{name} Voter {i+1}", model=model, temperature=temperature, top_p=top_p, debug=debug) for i in range(self.max_tries)]
         for voter in self.voters:
             voter.ends_turn = False  # Ensure voters never increment the turn
+        # Pseudo-player for making majority moves
+        self.pseudo_player= OllamaPlayer(name=f"{name} (Majority {self.max_tries})", model=model, temperature=temperature, top_p=top_p, debug=debug)
         # Optionally accept additional kwargs for compatibility
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -216,20 +133,26 @@ class MajorityPlayer(BasePlayer):
         self._other_player = other_player
         for voter in self.voters:
             voter.set_game_manager(game_manager, other_player)
+        self.pseudo_player.set_game_manager(game_manager, other_player)
 
     @property
     def player_name(self):
-        return f"{self.model} (Majority)"
+        return f"{self.model} (Majority {self.max_tries})"
+
+    @property
+    def opponent(self):
+        """Get the opponent player reference."""
+        return self._other_player
 
     @property
     def player_string(self) -> str:
         # Use a unique string for directory naming
-        return f"majority_{self.name.replace(' ', '_').lower()}"
+        return f"{self.model.replace(' ', '_').lower()}_M{self.max_tries}"
 
     def get_player_info(self) -> Dict[str, Any]:
         """Get player information for saving."""
         return {
-            "name": self.player_name(),
+            "name": self.player_name,
             "model": self.model,
             "temperature": self.temperature,
             "top_p": self.top_p,
@@ -242,7 +165,7 @@ class MajorityPlayer(BasePlayer):
         self.round_num = round_num
         for voter in self.voters:
             voter.set_game_context(game, player_index)
-
+        self.pseudo_player.set_game_context(game, player_index)
 
     def _get_game_dir(self):
         # Use the same directory structure as OllamaPlayer, using self.round_num
@@ -296,168 +219,92 @@ class MajorityPlayer(BasePlayer):
             moves.append((idx, move, valid, data, path))
         return moves
 
-    def _select_majority_valid_move(self, moves):
-        # Only consider valid moves
-        valid_moves = [(idx, move, data, path) for idx, move, valid, data, path in moves if valid]
-        if not valid_moves:
-            return None, None, None, None
-        from collections import Counter
-        move_list = [move for _, move, _, _ in valid_moves]
-        counter = Counter(move_list)
-        majority_move, count = counter.most_common(1)[0]
-        # Find the first voter with the majority move
-        for idx, move, data, path in valid_moves:
-            if move == majority_move:
-                return idx, move, data, path
-        return valid_moves[0]  # fallback
+    def update_game_from_voter_pseudo_game(self, voter):
+        self.set_game_context(voter.get_pseudo_game(), self.player_index)
+        self.opponent.set_game_context(voter.get_pseudo_game(), 1 - self.player_index)
 
-    def _save_majority_turn(self, chosen_data, turn):
-        game_dir = self._get_game_dir()
-        turn_path = game_dir / f"turn_{turn:03d}.pkl"
-        latest_path = game_dir / "latest.pkl"
-        with open(turn_path, 'wb') as f:
-            pickle.dump(chosen_data, f)
-        with open(latest_path, 'wb') as f:
-            pickle.dump(chosen_data, f)
-
-    def _advance_turn(self):
-        if self.game and hasattr(self.game, 'increment_game_turn'):
-            self.game.increment_game_turn()
-
-    def _majority_phase(self, phase, *args, **kwargs):
-        # Determine current turn
-        turn = self.game.state.game_turn if self.game and hasattr(self.game, 'state') else 1
-        voter_results = []
-        for i, voter in enumerate(self.voters):
-            voter.set_index(i)
-            voter.ends_turn = False  # Ensure voters never increment the turn
-            if phase == "select_team":
-                available_fish = args[0] if len(args) > 0 else []
-                result = voter.make_voter_move(phase="select_team", messages=available_fish, save_dir=self._get_game_dir().parent.parent.parent, round_num=self.round_num)
-            elif phase == "assertion":
-                result = voter.make_voter_move(phase="assertion", save_dir=self._get_game_dir().parent.parent.parent, round_num=self.round_num)
-            elif phase == "action":
-                result = voter.make_voter_move(phase="action", save_dir=self._get_game_dir().parent.parent.parent, round_num=self.round_num)
-            else:
-                raise ValueError(f"Unknown phase: {phase}")
-            history_entry, parsed_move_result, context = result
-            valid = history_entry.get('valid', False) if isinstance(history_entry, dict) else False
-            move_message = history_entry.get('move') if isinstance(history_entry, dict) else None
-            class DummyResult:
-                def __init__(self, success, message):
-                    self.success = success
-                    self.message = message
-            voter_results.append((i, DummyResult(valid, move_message), voter, result))
-        # Only count successful votes
-        valid_moves = [(i, r, v, res) for i, r, v, res in voter_results if r.success]
-        if not valid_moves:
-            msg = f"All {len(voter_results)} voters made invalid moves for phase '{phase}' at turn {turn}. Game terminated."
-            if self.game and hasattr(self.game, '_update_evaluation_game_status'):
-                self.game._update_evaluation_game_status("error")
-            return GameAction(phase, False, msg, "invalid action")
-        from collections import Counter
-        move_list = [r.message for _, r, _, _ in valid_moves]
-        counter = Counter(move_list)
-        majority_move, count = counter.most_common(1)[0]
-        for i, r, v, res in valid_moves:
-            if r.message == majority_move:
-                # Save this voter's state as turn_###.pkl and latest.pkl
-                # Use the same logic as before
-                # The voter's game state is in v.game, but we want to save the actual game object (as in OllamaVoter)
-                # The third element of result is context, but the game object is v.game
-                self._save_majority_turn(v.game, turn)
-                self._advance_turn()
-                return GameAction(phase, True, f"Majority move: {majority_move}", "valid")
-        # Fallback (should not happen)
-        i, r, v, res = valid_moves[0]
-        self._save_majority_turn(v.game, turn)
-        self._advance_turn()
-        return GameAction(phase, True, f"Majority move: {r.message}", "valid")
-
-    def make_team_selection(self, available_fish, max_tries=3, save_callback=None) -> GameAction:
-        # Use the same logic as _majority_phase, but for team selection
-        return self._majority_phase("select_team", available_fish)
-
-    def make_assertion(self) -> GameAction:
-        return self._majority_phase("assertion")
-
-    def make_action(self) -> GameAction:
-        return self._majority_phase("action")
-
-    def _debug_log(self, msg):
-        if self.debug:
-            print(f"[MajorityPlayer DEBUG] {msg}")
-
-    def get_voter_pickles(self, turn):
-        """Return list of (voter_index, path) for all v{i}_###.pkl files for this turn."""
-        import glob
-        game_dir = Path(self.save_dir) / self.player1_string / self.player2_string / f"round_{self.round_num:03d}"
-        pattern = str(game_dir / f"v*_%.3d.pkl" % turn)
-        files = glob.glob(pattern)
-        voters = []
-        for f in files:
-            # Extract voter index from filename
-            stem = Path(f).stem
-            if stem.startswith('v') and '_' in stem:
-                idx = int(stem[1:].split('_')[0])
-                voters.append((idx, f))
-        self._debug_log(f"Found voter pickles: {voters}")
-        return voters
-
-    def load_voter_moves(self, turn):
-        """Load all voter moves for a given turn. Returns list of (voter_index, move, full_data)."""
-        moves = []
-        for idx, path in self.get_voter_pickles(turn):
-            with open(path, 'rb') as f:
-                data = pickle.load(f)
-            # Try to extract the move from the last history entry
-            try:
-                move = data['history'][-1]['move']
-            except Exception:
-                move = None
-            moves.append((idx, move, data))
-            self._debug_log(f"Voter {idx} move: {move}")
-        return moves
-
-    def select_majority_move(self, moves):
-        """Return the move string with the most votes (arbitrary tie-break)."""
-        move_list = [m for _, m, _ in moves if m is not None]
-        if not move_list:
-            self._debug_log("No valid moves found among voters!")
-            return None
-        counter = Counter(move_list)
-        majority_move, count = counter.most_common(1)[0]
-        self._debug_log(f"Majority move: {majority_move} (votes: {count})")
-        return majority_move
-
-    def save_majority_turn(self, chosen_data, turn):
-        """Save the chosen voter's game state as turn_###.pkl and latest.pkl."""
-        game_dir = Path(self.save_dir) / self.player1_string / self.player2_string / f"round_{self.round_num:03d}"
-        turn_path = game_dir / f"turn_{turn:03d}.pkl"
-        latest_path = game_dir / "latest.pkl"
-        with open(turn_path, 'wb') as f:
-            pickle.dump(chosen_data, f)
-        with open(latest_path, 'wb') as f:
-            pickle.dump(chosen_data, f)
-        self._debug_log(f"Saved majority turn to {turn_path} and latest.pkl")
-
-    def run_majority_vote(self, turn):
-        """
-        Loads all voter pickles for the given turn, selects the majority move, and saves as turn_###.pkl.
-        Returns the chosen move and voter index.
-        """
-        moves = self.load_voter_moves(turn)
+    def pick_majority_move(self, moves):
         if not moves:
-            self._debug_log("No voter moves found!")
-            return None, None
-        majority_move = self.select_majority_move(moves)
-        if majority_move is None:
-            self._debug_log("No valid majority move!")
-            return None, None
-        # Find the first voter with the majority move
-        for idx, move, data in moves:
-            if move == majority_move:
-                self.save_majority_turn(data, turn)
-                return majority_move, idx
-        self._debug_log("Majority move found but no matching voter data!")
-        return None, None
+            raise ValueError("No moves provided to pick_majority_move.")
+        move_counts = {}
+        for move in moves.values():
+            if move is not None:
+                move_counts[move] = move_counts.get(move, 0) + 1
+        if not move_counts:
+            raise ValueError("No valid moves found in pick_majority_move.")
+        # Find the most popular move
+        popular_move = max(move_counts, key=move_counts.get)
+        self._debug_log(f"Majority move is '{popular_move}' with {move_counts[popular_move]} votes.")
+        # Find the first voter index who made this move
+        for voter_index, move in moves.items():
+            if move == popular_move:
+                return (voter_index, popular_move)
+        raise ValueError("Majority move not found among voters, this should not happen.")
+
+    def make_team_selection(self, available_fish, max_tries, save_callback) -> GameAction:
+        """Make a team selection from the available fish.
+        Run all voters, collect their selections, and pick the majority selection."""
+        actions = {}
+        messages = {}
+        for i, voter in enumerate(self.voters):
+            # voter.set_game_context(self.game, self.player_index)
+            voter.set_pseudo_game(self.game, self._game_manager)
+            def save_callback():
+                self._debug_log(f"Saving voter {voter.voter_index} game state at turn {voter.game.state.game_turn}")
+                return self._save_callback(voter.game, voter.player_string, self.opponent.player_string, voter.game.state.game_turn, self.get_player_info(), voter.pickle_prefix)
+
+            voter.set_index(i)
+            # One try, no callback
+            action = voter.make_team_selection(available_fish, 1, save_callback)
+            if action.success:
+                actions[i] = action
+                messages[i] = action.message
+
+            # Save voter pseudo-game state
+            voter.save_pseudo_game_state()
+        # Pick the majority selection
+        majority_selection = self.pick_majority_move(messages)
+        majority_voter, majority_message = majority_selection
+        self._debug_log(f"Majority selection made: {majority_message}")
+        # self.update_game_from_voter_pseudo_game(self.voters[majority_selection[0]])
+        # self._debug_log(f"Updated main game state from winning voter {majority_selection[0]}")
+        # return selections[majority_selection[0]]
+        self._debug_log(f"Using voter {majority_voter} raw response")
+        preset_response = actions[majority_voter].raw_response
+        return self.pseudo_player.make_team_selection(available_fish, 1, save_callback, preset_response)
+    
+
+
+    def make_assertion_simple_with_context(self):
+        raise NotImplementedError("make_assertion_simple_with_context not implemented yet")
+        assertions, contexts = {}, {}
+        for i, voter in enumerate(self.voters):
+            voter.set_game_context(self.game, self.player_index)
+            voter.set_pseudo_game(self.game)
+            voter.set_index(i)
+            assertion, context = voter.make_assertion_simple_with_context()
+            assertions[i] = assertion
+            contexts[i] = context
+        majority_assertion = self.pick_majority_move(assertions)
+        self._debug_log(f"Majority assertion made: {majority_assertion[1]}")
+        self.update_game_from_voter_pseudo_game(self.voters[majority_assertion[0]])
+        self._debug_log(f"Updated main game state from winning voter {majority_assertion[0]}")
+        majority_context = contexts[majority_assertion[0]]
+        return majority_assertion[1], majority_context
+
+    def make_action_simple_with_context(self):
+        raise NotImplementedError("make_action_simple_with_context not implemented yet")
+        actions, contexts = {}, {}
+        for i, voter in enumerate(self.voters):
+            voter.set_game_context(self.game, self.player_index)
+            voter.set_pseudo_game(self.game)
+            voter.set_index(i)
+            action, context = voter.make_action_simple_with_context()
+            actions[i] = action
+            contexts[i] = context
+        majority_action = self.pick_majority_move(actions)
+        self._debug_log(f"Majority action made: {majority_action[1]}")
+        self.update_game_from_voter_pseudo_game(self.voters[majority_action[0]])
+        self._debug_log(f"Updated main game state from winning voter {majority_action[0]}")
+        majority_context = contexts[majority_action[0]]
+        return majority_action[1], majority_context

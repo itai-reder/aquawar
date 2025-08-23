@@ -775,8 +775,7 @@ All fish: 400 HP, 100 ATK base
     
     def add_history_entry_unified(self, player_index: int, input_messages: List[Any], response: Dict[str, Any], 
                                  valid: bool, move: str, damage_dealt: int = 0, damage_taken: int = 0, 
-                                 attempt: int = 1, max_attempts: int = 1, error_details: Optional[Dict] = None,
-                                 ends_turn = True) -> None:
+                                 attempt: int = 1, max_attempts: int = 1, error_details: Optional[Dict] = None) -> None:
         """Unified history entry function that fixes double increment and message mutation bugs."""
         
         self._debug_log(f"add_history_entry_unified called: player_index={player_index}, valid={valid}, move={move[:25]}..., attempt={attempt}/{max_attempts}")
@@ -809,11 +808,9 @@ All fish: 400 HP, 100 ATK base
         if error_details:
             history_entry["error_details"] = error_details
         self._debug_log(f"Adding history entry: ({len(self.history)} -> {len(self.history) + 1})")
-        if ends_turn:
-            self.history.append(history_entry)
-        #     return self.history
-        # return self.history + [history_entry]
-
+        
+        self.history.append(history_entry)
+        
 
     def _track_invalid_move_from_move_description(self, player_idx: int, move_description: str) -> None:
         """Classify and track invalid move based on move description."""
@@ -830,6 +827,7 @@ All fish: 400 HP, 100 ATK base
     
     def increment_game_turn(self) -> None:
         """Increment game turn counter for any action/assertion attempt."""
+        self._debug_log(f"Incrementing game turn: {self.state.game_turn} -> {self.state.game_turn + 1}")
         self.state.game_turn += 1
 
     # ------------------------------------------------------------------

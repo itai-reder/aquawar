@@ -24,21 +24,22 @@ class PersistentGameManager:
         self.save_dir.mkdir(exist_ok=True)
         self.debug = debug
     
-
-    
     def get_game_dir(self, player1_string: str, player2_string: str, round_num: int = 1) -> Path:
         """Get the directory for a specific game using structure saves/{player1}/{player2}/round_001/."""
         return self.save_dir / player1_string / player2_string / f"round_{round_num:03d}"
         
-    def get_save_path(self, player1_string: str, player2_string: str, round_num: int = 1, turn: Optional[int] = None) -> Path:
+    def get_save_path(self, player1_string: str, player2_string: str, round_num: int = 1,
+                      turn: Optional[int] = None, output_prefix: str = "turn") -> Path:
         """Get the save file path for a game using new directory structure."""
         game_dir = self.get_game_dir(player1_string, player2_string, round_num)
         game_dir.mkdir(parents=True, exist_ok=True)
         if turn is not None:
-            return game_dir / f"turn_{turn:03d}.pkl"
+            return game_dir / f"{output_prefix}_{turn:03d}.pkl"
         return game_dir / "latest.pkl"
     
-    def save_game_state(self, game: Game, player1_string: str, player2_string: str, round_num: int = 1, players_info: Optional[Dict[str, Any]] = None) -> str:
+    def save_game_state(self, game: Game, player1_string: str, player2_string: str,
+                        round_num: int = 1, players_info: Optional[Dict[str, Any]] = None,
+                        output_prefix: str = "turn") -> str:
         """Save game state and return the save file path.
         
         Args:
@@ -50,15 +51,24 @@ class PersistentGameManager:
                          {"1": [{"name": str, "model": str, "temperature": float, "top_p": float}],
                           "2": [{"name": str, "model": str, "temperature": float, "top_p": float}]}
         """
-        save_path = self.get_save_path(player1_string, player2_string, round_num, game.state.game_turn)
+        save_path = self.get_save_path(player1_string, player2_string, round_num, game.state.game_turn, output_prefix)
         latest_path = self.get_save_path(player1_string, player2_string, round_num)
-        
-        self._debug_log(f"Saving game state to {save_path} and {latest_path}")
-        game.save_game(str(save_path), players_info)
-        game.save_game(str(latest_path), players_info)  # Also save as latest
-        
+
+        # Only save latest if the output_prefix is "turn", i.e., not a pseudo game
+        save_latest = (output_prefix == "turn")
+
+        if save_latest:
+            self._debug_log(f"Saving game state to {save_path} and {latest_path}")
+            game.save_game(str(save_path), players_info)
+            game.save_game(str(latest_path), players_info)
+        else:
+            self._debug_log(f"Saving pseudo game state to {save_path}")
+            game.save_game(str(save_path), players_info)
+
         return str(save_path)
-    
+
+    def save_pseudo_game_state(self, *args):
+        raise NotImplementedError("Pseudo game state not implemented yet")
 
     def load_game_state(self, player1_string: str, player2_string: str, round_num: int = 1, turn: Optional[int] = None) -> Game:
         """Load game state from save file."""
