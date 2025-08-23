@@ -94,8 +94,8 @@ class PersistentGameManager:
             round_num: Round number (defaults to 1)
         """
         # game = Game(player_names, debug=self.debug, max_tries=max_tries)
-        game = Game(player_names, debug=self.debug)
-        
+        game = Game(player_names, debug=self.debug, round_num=round_num)
+
         # Create game directory
         game_dir = self.get_game_dir(player1_string, player2_string, round_num)
         game_dir.mkdir(parents=True, exist_ok=True)

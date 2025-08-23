@@ -101,9 +101,10 @@ class Game:
             print(f"[GAME DEBUG] {message}")
     
     # def __init__(self, player_names: Tuple[str, str], debug: bool = False, max_tries: int = 3):
-    def __init__(self, player_names: Tuple[str, str], debug: bool = False):
+    def __init__(self, player_names: Tuple[str, str], debug: bool = False, round_num: int = 1):
         # self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])], max_tries=max_tries)
-        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])])
+        self.state = GameState(players=[PlayerState(player_names[0]), PlayerState(player_names[1])], round_no=round_num)
+        self.round_num = round_num
         self.state.current_player = 1  # Player 1 starts first
         self.history = []  # List[Dict] to track turn metadata
         self.current_turn_damage = {"dealt": 0, "taken": 0}  # Track damage for current turn
@@ -390,8 +391,9 @@ All fish: 400 HP, 100 ATK base
                     damage_applied = f.take_damage(50, None, direct=False, game=self.state)
                     self.track_damage_dealt(damage_applied)
             result = f"Correct! {fish.name} revealed and all enemy fish take 50 HP damage."
-            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Successful assertion: {guess}"))
-            
+            # self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Successful assertion: {guess} is the fish at index {enemy_index}"))
+            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Successful assertion: Fish {enemy_index} is {guess}"))
+
             # Update evaluation: successful assertion
             self._update_evaluation_assertion(player_idx, "true")
         else:
@@ -406,7 +408,8 @@ All fish: 400 HP, 100 ATK base
                         self._debug_log(f"Damage applied: {damage_applied}, new HP: {f.hp}")
                         self.track_damage_taken(damage_applied)
             result = f"Wrong! {guess} was incorrect, all your fish take 50 HP damage."
-            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Failed assertion: guessed {guess}"))
+            # self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Failed assertion: {guess} is not the fish at index {enemy_index}"))
+            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "assertion", f"Failed assertion: Fish {enemy_index} is not {guess}"))
             self._debug_log(f"Assertion failure processing complete")
             
             # Update evaluation: failed assertion
@@ -474,13 +477,15 @@ All fish: 400 HP, 100 ATK base
             target = enemy_team.fish[target_index]
             self._debug_log(f"perform_action: about to call {actor.name}.normal_attack({target.name})")
             try:
-                actor.normal_attack(target, self.state)
+                public_result = actor.normal_attack(target, self.state)
                 self._debug_log(f"perform_action: normal_attack completed")
             except Exception as e:
                 self._debug_log(f"ERROR in normal_attack: {e} (type: {type(e).__name__})")
                 raise
             result = f"{actor.name} attacked enemy position {target_index}."
-            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} normal attack on enemy {target_index}"))
+            # self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} normal attack on enemy fish at index {target_index}"))
+            move_details = f"Fish {fish_index} used normal attack on fish {target_index}" if public_result is None else public_result
+            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", move_details))
         elif action == "ACTIVE":
             self._debug_log(f"perform_action: processing ACTIVE skill")
             # Set up target selection functions for the active skill
@@ -498,14 +503,18 @@ All fish: 400 HP, 100 ATK base
             self.state.choose_enemy = choose_enemy_func
             self._debug_log(f"perform_action: about to call {actor.name}.active()")
             try:
-                actor.active(self.state, fish_index)
+                public_result = actor.active(self.state, fish_index)
                 self._debug_log(f"perform_action: active skill completed")
             except Exception as e:
                 self._debug_log(f"ERROR in active skill: {e} (type: {type(e).__name__})")
                 raise
             result = f"{actor.name} used active skill."
-            target_desc = f" on {target_index}" if target_index is not None else ""
-            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} active skill{target_desc}"))
+            # target_desc = f" on enemy at index {target_index}" if target_index is not None else ""
+            # self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", f"{actor.name} active skill{target_desc}"))
+            target_desc = f" on fish {target_index}" if target_index is not None else ""
+            move_details = f"Fish {fish_index} used active skill{target_desc}" if public_result is None else public_result
+            self.state.move_history.append(MoveRecord(player_idx, self.state.game_turn, "action", move_details))
+
         else:
             return "Unknown action."
         
@@ -625,7 +634,6 @@ All fish: 400 HP, 100 ATK base
             'player_turn': self.state.player_turn,
             'phase': self.state.phase,
             'current_player': self.state.current_player,
-            # 'max_tries': self.state.max_tries
         }
     
     def _serialize_team(self, team: Team) -> Dict[str, Any]:

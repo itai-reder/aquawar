@@ -61,9 +61,6 @@ class OllamaVoter(OllamaPlayer):
         pseudo_game = deepcopy(game)
         self.set_game_context(pseudo_game, self.player_index)
 
-        # self._other_player = deepcopy(opponent)
-        # self._other_player.set_game_context(pseudo_game, 1 - self.player_index)
-
         pseudo_game_manager = deepcopy(game_manager)
         pseudo_game_manager._set_turn_prefix(self.pickle_prefix)
         self.set_game_manager(pseudo_game_manager, self._other_player)
@@ -259,16 +256,12 @@ class MajorityPlayer(BasePlayer):
             if action.success:
                 actions[i] = action
                 messages[i] = action.message
-
             # Save voter pseudo-game state
             voter.save_pseudo_game_state()
         # Pick the majority selection
         majority_selection = self.pick_majority_move(messages)
         majority_voter, majority_message = majority_selection
         self._debug_log(f"Majority selection made: {majority_message}")
-        # self.update_game_from_voter_pseudo_game(self.voters[majority_selection[0]])
-        # self._debug_log(f"Updated main game state from winning voter {majority_selection[0]}")
-        # return selections[majority_selection[0]]
         self._debug_log(f"Using voter {majority_voter} raw response")
         preset_response = actions[majority_voter].raw_response
         return self.pseudo_player.make_team_selection(available_fish, 1, save_callback, preset_response)
@@ -276,35 +269,39 @@ class MajorityPlayer(BasePlayer):
 
 
     def make_assertion_simple_with_context(self):
-        raise NotImplementedError("make_assertion_simple_with_context not implemented yet")
-        assertions, contexts = {}, {}
+        assertions, contexts, responses = {}, {}, {}
         for i, voter in enumerate(self.voters):
-            voter.set_game_context(self.game, self.player_index)
-            voter.set_pseudo_game(self.game)
+            # voter.set_game_context(self.game, self.player_index)
+            voter.set_pseudo_game(self.game, self._game_manager)
             voter.set_index(i)
-            assertion, context = voter.make_assertion_simple_with_context()
+            assertion, context, response = voter.make_assertion_simple_with_context()
             assertions[i] = assertion
             contexts[i] = context
+            responses[i] = response
+
+            voter.save_pseudo_game_state()
         majority_assertion = self.pick_majority_move(assertions)
-        self._debug_log(f"Majority assertion made: {majority_assertion[1]}")
-        self.update_game_from_voter_pseudo_game(self.voters[majority_assertion[0]])
-        self._debug_log(f"Updated main game state from winning voter {majority_assertion[0]}")
-        majority_context = contexts[majority_assertion[0]]
-        return majority_assertion[1], majority_context
+        majority_voter, majority_message = majority_assertion
+        self._debug_log(f"Majority assertion made: {majority_message}")
+        self._debug_log(f"Using voter {majority_voter} raw response")
+        preset_response = responses[majority_voter]
+        return self.pseudo_player.make_assertion_simple_with_context(preset_response)
 
     def make_action_simple_with_context(self):
-        raise NotImplementedError("make_action_simple_with_context not implemented yet")
-        actions, contexts = {}, {}
+        actions, contexts, responses = {}, {}, {}
         for i, voter in enumerate(self.voters):
-            voter.set_game_context(self.game, self.player_index)
-            voter.set_pseudo_game(self.game)
+            # voter.set_game_context(self.game, self.player_index)
+            voter.set_pseudo_game(self.game, self._game_manager)
             voter.set_index(i)
-            action, context = voter.make_action_simple_with_context()
+            action, context, response = voter.make_action_simple_with_context()
             actions[i] = action
             contexts[i] = context
+            responses[i] = response
+
+            voter.save_pseudo_game_state()
         majority_action = self.pick_majority_move(actions)
-        self._debug_log(f"Majority action made: {majority_action[1]}")
-        self.update_game_from_voter_pseudo_game(self.voters[majority_action[0]])
-        self._debug_log(f"Updated main game state from winning voter {majority_action[0]}")
-        majority_context = contexts[majority_action[0]]
-        return majority_action[1], majority_context
+        majority_voter, majority_message = majority_action
+        self._debug_log(f"Majority action made: {majority_message}")
+        self._debug_log(f"Using voter {majority_voter} raw response")
+        preset_response = responses[majority_voter]
+        return self.pseudo_player.make_action_simple_with_context(preset_response)

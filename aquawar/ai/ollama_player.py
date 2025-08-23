@@ -733,10 +733,6 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             self._debug_log("No game context set for action")
             return GameAction("action", False, "No game context set", "invalid action")
 
-        # if self.ends_turn:
-            # Increment game turn for any action attempt (valid or invalid)
-            # self._debug_log(f"Incrementing game turn for player {self.player_index}")
-            # self.game.increment_game_turn()
         self._debug_log(f"Incrementing game turn for player {self.player_index}")
         self.game.increment_game_turn()
 
@@ -895,20 +891,48 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
     # ------------------------------------------------------------------
     # Refactored Core Methods for Move Generation, Persistence, and Turn Management
     # ------------------------------------------------------------------
-    
-    def make_move(self, phase: str, messages: List[Any] = None) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+
+    def _map_fish_index_to_name(self, player_index, fish_index):
+        team = self.game.state.players[player_index].team
+        return team.fish[fish_index].name
+
+    def describe_move(self, context, move_type, **kwargs):
+        """
+        Updates the context to describe the move being made in an organized format:
+
+        Updates:
+        {
+            "move_type": <move_type>,           # Required
+            "player_fish_index": <fish_index|None>,
+            "player_fish_name": <fish_name|None>,
+            "target_fish_index": <target_index|None>,
+            "target_fish_name": <target_name|None>,
+            "assert_fish_name": <assert_fish_name|None>
+        }
+        """
+        context.update({
+            "move_type": move_type,
+            "player_fish_index": kwargs.get("player_fish_index", None),
+            "player_fish_name": kwargs.get("player_fish_name", None),
+            "target_fish_index": kwargs.get("target_fish_index", None),
+            "target_fish_name": kwargs.get("target_fish_name", None),
+            "assert_fish_name": kwargs.get("assert_fish_name", None),
+        })
+
+    def make_move(self, phase: str, messages: List[Any] = None, preset_response = None) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         """Core move generation method that can be reused by different player types.
         
         Args:
             phase: "assertion" or "action" or "team_selection"  
             messages: Optional pre-built messages, if None will generate from game state
+            preset_response: Optional preset response to use instead of calling LLM
         Returns:
             Tuple of (history_entry, parsed_move_result, additional_context)
         """
         if not self.game or self.player_index is None:
             print(f"[DEBUG] make_move: No game context set for move generation (phase={phase}, player={self.player_index})")
             raise ValueError("No game context set for move generation")
-
+        response = None
         # Generate messages if not provided
         if messages is None:
             if phase == "assertion":
@@ -948,8 +972,12 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             self.game.increment_game_turn()
 
             # Call LLM
-            print(f"[DEBUG] Game turn {self.game.state.game_turn}: Invoking LLM for phase={phase}, player={self.player_index}")
-            response = self.llm.invoke(messages)
+            if not preset_response:
+                self._debug_log(f"Game turn {self.game.state.game_turn}: Invoking LLM for phase={phase}, player={self.player_index}")
+                response = self.llm.invoke(messages)
+            else:
+                self._debug_log(f"Game turn {self.game.state.game_turn}: Using preset response for phase={phase}, player={self.player_index}")
+                response = preset_response
             context["llm_response"] = json.loads(response.model_dump_json())
 
             # Extract and validate tool call
@@ -967,26 +995,29 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             # Execute move based on phase and tool
             if phase == "assertion":
                 if tool_name == 'skip_assertion_tool':
-                    context["move_type"] = "skip_assertion"
-                    context["validated_parameters"] = {}
+                    # context["move_type"] = "skip_assertion"
+                    # context["validated_parameters"] = {}
+                    self.describe_move(context, move_type="skip_assertion")
                     result = self.game.skip_assertion(self.player_index)
 
                 elif tool_name == 'assert_fish_tool':
-                    enemy_index = args.get('enemy_index')
+                    enemy_fish_index = args.get('enemy_index')
                     fish_name = args.get('fish_name')
 
-                    if enemy_index is None or fish_name is None:
+                    if enemy_fish_index is None or fish_name is None:
                         print(f"[DEBUG] make_move: Missing assertion parameters from LLM/tool call (phase={phase}, player={self.player_index})")
                         raise RuntimeError("Missing assertion parameters from LLM/tool call")
 
                     try:
-                        enemy_index = int(enemy_index)
+                        enemy_fish_index = int(enemy_fish_index)
                     except Exception:
-                        print(f"[DEBUG] make_move: Invalid enemy_index value: {enemy_index} (phase={phase}, player={self.player_index})")
-                        raise RuntimeError(f"Invalid enemy_index value: {enemy_index}")
-                    context["move_type"] = "assert_fish"
-                    context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
-                    result = self.game.perform_assertion(self.player_index, enemy_index, fish_name)
+                        print(f"[DEBUG] make_move: Invalid enemy_index value: {enemy_fish_index} (phase={phase}, player={self.player_index})")
+                        raise RuntimeError(f"Invalid enemy_index value: {enemy_fish_index}")
+                    # context["move_type"] = "assert_fish"
+                    # context["validated_parameters"] = {"enemy_index": enemy_index, "fish_name": fish_name}
+                    enemy_fish_name = self._map_fish_index_to_name(1-self.player_index, enemy_fish_index)
+                    self.describe_move(context, move_type="assert_fish", target_fish_index=enemy_fish_index, target_fish_name=enemy_fish_name, assert_fish_name=fish_name)
+                    result = self.game.perform_assertion(self.player_index, enemy_fish_index, fish_name)
                 else:
                     print(f"[DEBUG] make_move: Invalid tool for assertion phase: {tool_name} (phase={phase}, player={self.player_index})")
                     raise RuntimeError(f"Invalid tool for assertion phase: {tool_name}")
@@ -1006,8 +1037,11 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         print(f"[DEBUG] make_move: Invalid attack indices: fish_index={fish_index}, target_index={target_index} (phase={phase}, player={self.player_index})")
                         raise RuntimeError(f"Invalid attack indices: fish_index={fish_index}, target_index={target_index}")
 
-                    context["move_type"] = "normal_attack"
-                    context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    # context["move_type"] = "normal_attack"
+                    # context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    player_fish_name = self._map_fish_index_to_name(self.player_index, fish_index)
+                    target_fish_name = self._map_fish_index_to_name(1-self.player_index, target_index)
+                    self.describe_move(context, move_type="normal_attack", player_fish_index=fish_index, player_fish_name=player_fish_name, target_fish_index=target_index, target_fish_name=target_fish_name)
                     result = self.game.perform_action(self.player_index, fish_index, "NORMAL", target_index)
 
                 elif tool_name == 'active_skill_tool':
@@ -1019,6 +1053,7 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                         raise RuntimeError("Missing fish index for active skill from LLM/tool call")
                     try:
                         fish_index = int(fish_index)
+                        player_fish_name = self._map_fish_index_to_name(self.player_index, fish_index)
                     except Exception:
                         print(f"[DEBUG] make_move: Invalid fish_index value: {fish_index} (phase={phase}, player={self.player_index})")
                         raise RuntimeError(f"Invalid fish_index value: {fish_index}")
@@ -1027,14 +1062,17 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                     if target_index is not None and target_index != "" and target_index != "None":
                         try:
                             target_index = int(target_index)
+                            target_fish_name = self._map_fish_index_to_name(1-self.player_index, target_index)
                         except Exception:
                             print(f"[DEBUG] make_move: Invalid target_index value: {target_index} (phase={phase}, player={self.player_index})")
                             raise RuntimeError(f"Invalid target_index value: {target_index}")
                     else:
                         target_index = None
+                        target_fish_name = None
 
-                    context["move_type"] = "active_skill"
-                    context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    # context["move_type"] = "active_skill"
+                    # context["validated_parameters"] = {"fish_index": fish_index, "target_index": target_index}
+                    self.describe_move(context, move_type="active_skill", player_fish_index=fish_index, player_fish_name=player_fish_name, target_fish_index=target_index, target_fish_name=target_fish_name)
                     result = self.game.perform_action(self.player_index, fish_index, "ACTIVE", target_index)
                 else:
                     print(f"[DEBUG] make_move: Invalid tool for action phase: {tool_name} (phase={phase}, player={self.player_index})")
@@ -1055,7 +1093,8 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             }
             context["success"] = True
             print(f"[DEBUG] make_move: Completed phase={phase}, player={self.player_index}, turn={self.game.state.game_turn}")
-            return history_entry, result, context
+            # return history_entry, result, context
+            return result, context, response
 
         except Exception as e:
             context["error"] = str(e)
@@ -1070,7 +1109,8 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 "context": context,
                 "success": False
             }
-            return history_entry, str(e), context
+            # return history_entry, str(e), context
+            return str(e), context, response
     
     def save_turn_pickle(self, file_prefix: str, additional_data: Dict[str, Any] = None) -> str:
         """Save current game state to pickle file with specified prefix.
@@ -1160,15 +1200,16 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
             return "system_tracking"
         
         return "unknown"
-    
-    def make_action_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
+
+    def make_action_simple_with_context(self, preset_response=None) -> Tuple[str, Dict[str, Any]]:
         """Make action decision with full context capture for documentation.
         
         This method now delegates to the refactored make_move method.
         """
         try:
-            history_entry, result, context = self.make_move("action")
-            return result, context
+            # history_entry, result, context = self.make_move("action")
+            result, context, response = self.make_move("action", preset_response=preset_response)
+            return result, context, response
         except Exception as e:
             # For backward compatibility, ensure error location is identified
             context = {
@@ -1176,15 +1217,16 @@ RECOMMENDED STRATEGY: For this game, avoid selecting Mimic Fish (if present) to 
                 "error": str(e)
             }
             raise  # Re-raise for global handling
-    
-    def make_assertion_simple_with_context(self) -> Tuple[str, Dict[str, Any]]:
+
+    def make_assertion_simple_with_context(self, preset_response=None) -> Tuple[str, Dict[str, Any]]:
         """Make assertion decision with full context capture for documentation.
         
         This method now delegates to the refactored make_move method.
         """
         try:
-            history_entry, result, context = self.make_move("assertion")
-            return result, context
+            # history_entry, result, context = self.make_move("assertion", preset_response=preset_response)
+            result, context, response = self.make_move("assertion", preset_response=preset_response)
+            return result, context, response
         except Exception as e:
             # For backward compatibility, ensure error location is identified  
             context = {
@@ -2099,16 +2141,18 @@ class OllamaGameManager:
                         # Business logic with context capture
                         result = None
                         context = {}
-                        
-                        if game.state.phase == "assertion":
+
+                        current_phase = game.state.phase
+
+                        if current_phase == "assertion":
                             self._debug_log("Executing assertion phase")
-                            result, context = current_player.make_assertion_simple_with_context()
+                            result, context, _ = current_player.make_assertion_simple_with_context()
                             # print(f"Assertion (attempt {attempt + 1}): {result}")
                             print(f"Assertion (attempt {attempt}): {result}")
-                            
-                        elif game.state.phase == "action":
+
+                        elif current_phase == "action":
                             self._debug_log(f"Executing action phase ({current_player.name})")
-                            result, context = current_player.make_action_simple_with_context()
+                            result, context, _ = current_player.make_action_simple_with_context()
                             # print(f"Action (attempt {attempt + 1}): {result}")
                             print(f"Action (attempt {attempt}): {result}")
 
@@ -2128,7 +2172,7 @@ class OllamaGameManager:
                                 "turn_context": turn_context
                             },  # response dict
                             True,  # valid = True for successful attempts
-                            f"Turn {game.state.game_turn}: {game.state.phase} - {result}",  # move_description
+                            f"Turn {game.state.game_turn}: {current_phase.capitalize()} - {result}",  # move_description
                             # attempt=attempt+1,
                             attempt=attempt,
                             # max_attempts=self.max_tries,

@@ -145,14 +145,24 @@ class Fish:
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
-    def normal_attack(self, target: Fish, game: Any) -> None:
+    def normal_attack(self, target: 'Fish', game: Any) -> str:
+        my_team = game.team_of(self)
+        enemy_team = game.other_team_of(self)
+        try:
+            actor_idx = my_team.fish.index(self)
+        except Exception:
+            actor_idx = -1
+        try:
+            target_idx = enemy_team.fish.index(target)
+        except Exception:
+            target_idx = -1
         dmg = int(0.5 * self.atk)
         actual = target.take_damage(dmg, self, direct=True, game=game)
         self.after_direct_attack(target, game, used_normal=True)
-        # Notify teammates of retaliation style passives
         for mate in game.team_of(target).living_fish():
             if mate is not target:
                 mate.after_teammate_attacked(target, self, game)
+        return f"Fish {actor_idx} attacked enemy fish {target_idx} for {actual} damage."
 
     def active(self, game: Any, actor_idx: int) -> None:
         """Perform the active ability.  Subclasses override."""
@@ -169,11 +179,24 @@ class Archerfish(Fish):
         if mate.hp > 0 and mate.hp < 120:
             source.take_damage(30, self, direct=True, game=game)
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
+        my_team = game.team_of(self)
+        other_team = game.other_team_of(self)
+        try:
+            actor_idx_val = my_team.fish.index(self)
+        except Exception:
+            actor_idx_val = -1
         dmg = int(self.atk * 0.35)
-        for f in game.other_team_of(self).living_fish():
-            f.take_damage(dmg, self, direct=True, game=game)
+        results = []
+        for f in other_team.living_fish():
+            try:
+                idx = other_team.fish.index(f)
+            except Exception:
+                idx = -1
+            actual = f.take_damage(dmg, self, direct=True, game=game)
+            results.append(f"enemy fish {idx} took {actual} damage")
         self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx_val} used AoE: " + ", ".join(results)
 
 
 class Pufferfish(Fish):
@@ -181,13 +204,24 @@ class Pufferfish(Fish):
         if mate.hp > 0 and mate.hp < 120:
             source.take_damage(30, self, direct=True, game=game)
 
-    def active(self, game: Any, actor_idx: int) -> None:
-        teammates = game.team_of(self).living_fish()
-        target = game.choose_teammate(actor_idx, len(teammates))
+    def active(self, game: Any, actor_idx: int) -> str:
+        my_team = game.team_of(self)
+        teammates = my_team.living_fish()
+        try:
+            actor_idx_val = my_team.fish.index(self)
+        except Exception:
+            actor_idx_val = -1
+        target = game.choose_teammate(actor_idx_val, len(teammates))
         if target is not None:
-            target.take_damage(50, self, direct=True, game=game)
+            try:
+                target_idx = my_team.fish.index(target)
+            except Exception:
+                target_idx = -1
+            actual = target.take_damage(50, self, direct=True, game=game)
             self.atk += 70
-        self.after_direct_attack(None, game, used_normal=False)
+            self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took 50 damage, fish {actor_idx_val} gained 70 ATK."
+        return f"Fish {actor_idx_val} used active skill (no visible effect)."
 
 
 class ElectricEel(Fish):
@@ -211,21 +245,39 @@ class ElectricEel(Fish):
                 amount = amount - share
         return super().take_damage(amount, source, direct=direct, game=game)
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
+        my_team = game.team_of(self)
+        try:
+            actor_idx_val = my_team.fish.index(self)
+        except Exception:
+            actor_idx_val = -1
         dmg = int(self.atk * 0.35)
         for f in game.other_team_of(self).living_fish():
             f.take_damage(dmg, self, direct=True, game=game)
         self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx_val} used AoE, dealing {dmg} to all enemy fish."
 
 
 class Sunfish(ElectricEel):
-    def active(self, game: Any, actor_idx: int) -> None:
-        teammates = game.team_of(self).living_fish()
-        target = game.choose_teammate(actor_idx, len(teammates))
+    def active(self, game: Any, actor_idx: int) -> str:
+        my_team = game.team_of(self)
+        teammates = my_team.living_fish()
+        try:
+            actor_idx_val = my_team.fish.index(self)
+        except Exception:
+            actor_idx_val = -1
+        target = game.choose_teammate(actor_idx_val, len(teammates))
         if target is not None:
-            target.take_damage(50, self, direct=True, game=game)
+            try:
+                target_idx = my_team.fish.index(target)
+            except Exception:
+                target_idx = -1
+            actual = target.take_damage(50, self, direct=True, game=game)
             self.atk += 70
+            self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took 50 damage, fish {actor_idx_val} gained 70 ATK."
         self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx_val} used active skill (no visible effect)."
 
 
 class SeaWolf(Fish):
@@ -233,11 +285,16 @@ class SeaWolf(Fish):
         super().__init__(name)
         self.dodge_chance = 0.3
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         target = game.choose_enemy(actor_idx, len(game.other_team_of(self).living_fish()))
         if target is not None:
-            target.take_damage(120, self, direct=True, game=game)
-        self.after_direct_attack(target, game, used_normal=False)
+            target_idx = game.other_team_of(self).fish.index(target)
+            dmg = 120
+            actual = target.take_damage(dmg, self, direct=True, game=game)
+            self.after_direct_attack(target, game, used_normal=False)
+            return f"Fish {actor_idx} used active: attacked enemy fish {target_idx} for {actual} damage."
+        self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx} used active skill (no visible effect)."
 
 
 class MantaRay(Fish):
@@ -245,13 +302,17 @@ class MantaRay(Fish):
         super().__init__(name)
         self.dodge_chance = 0.3
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         mates = game.team_of(self).living_fish()
         target = game.choose_teammate(actor_idx, len(mates))
         if target is not None:
+            target_idx = game.team_of(self).fish.index(target)
             target.buffs.append(Buff("reduce", 0.7))
             self.atk += 20
+            self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx} used active: teammate fish {target_idx} will take reduced damage next time."
         self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx} used active skill (no visible effect)."
 
 
 class SeaTurtle(Fish):
@@ -263,17 +324,26 @@ class SeaTurtle(Fish):
         if self.shields <= 0 and self.dodge_chance == 0:
             self.dodge_chance = 0.3
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         mates = game.team_of(self).living_fish()
         target = game.choose_teammate(actor_idx, len(mates))
+        public = []
         if target is not None:
+            target_idx = game.team_of(self).fish.index(target)
             target.buffs.append(Buff("heal", 20))
+            public.append(f"teammate fish {target_idx} will heal after next damage")
             if self.used_active_count < 3:
                 enemy = game.choose_enemy(actor_idx, len(game.other_team_of(self).living_fish()))
                 if enemy is not None:
-                    enemy.take_damage(120, self, direct=True, game=game)
+                    enemy_idx = game.other_team_of(self).fish.index(enemy)
+                    dmg = 120
+                    actual = enemy.take_damage(dmg, self, direct=True, game=game)
+                    public.append(f"attacked enemy fish {enemy_idx} for {actual} damage")
         self.used_active_count += 1
         self.after_direct_attack(None, game, used_normal=False)
+        if public:
+            return f"Fish {actor_idx} used active: " + ", ".join(public)
+        return f"Fish {actor_idx} used active skill (no visible effect)."
 
 
 class Octopus(Fish):
@@ -281,13 +351,17 @@ class Octopus(Fish):
         if self.is_alive():
             self.hp = min(MAX_HP, self.hp + 20)
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         mates = game.team_of(self).living_fish()
         target = game.choose_teammate(actor_idx, len(mates))
         if target is not None:
+            target_idx = game.team_of(self).fish.index(target)
             target.buffs.append(Buff("reduce", 0.7))
             self.atk += 20
+            self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx} used active: teammate fish {target_idx} will take reduced damage next time."
         self.after_direct_attack(None, game, used_normal=False)
+        return f"Fish {actor_idx} used active skill (no visible effect)."
 
 
 class GreatWhiteShark(Fish):
@@ -295,17 +369,21 @@ class GreatWhiteShark(Fish):
         if self.is_alive():
             self.hp = min(MAX_HP, self.hp + 20)
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         enemies = game.other_team_of(self).living_fish()
         if not enemies:
-            return
+            self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx} used active skill (no visible effect)."
         target = min(enemies, key=lambda f: f.hp)
+        target_idx = game.other_team_of(self).fish.index(target)
         dmg = int(self.atk * (1.4 if target.hp < 160 else 1.2))
-        target.take_damage(dmg, self, direct=True, game=game)
+        actual = target.take_damage(dmg, self, direct=True, game=game)
         self.after_direct_attack(target, game, used_normal=False)
+        return f"Fish {actor_idx} used active: attacked enemy fish {target_idx} for {actual} damage."
 
 
 class HammerheadShark(GreatWhiteShark):
+
     def after_direct_damage(self, amount: int, source: Optional[Fish], game: Any) -> None:
         if self.hp < 80:
             self.atk = BASE_ATK + 15
@@ -320,23 +398,34 @@ class HammerheadShark(GreatWhiteShark):
             source.take_damage(40, self, direct=True, game=game)
         return result
 
+    def active(self, game: Any, actor_idx: int) -> str:
+        return super().active(game, actor_idx)
+
 
 class Clownfish(Fish):
     def after_direct_damage(self, amount: int, source: Optional[Fish], game: Any) -> None:
         if self.hp < 120 and source is not None:
             source.take_damage(30, self, direct=True, game=game)
 
-    def active(self, game: Any, actor_idx: int) -> None:
+    def active(self, game: Any, actor_idx: int) -> str:
         mates = game.team_of(self).living_fish()
         target = game.choose_teammate(actor_idx, len(mates))
+        public = []
         if target is not None:
+            target_idx = game.team_of(self).fish.index(target)
             target.buffs.append(Buff("share", 0.7))
+            public.append(f"teammate fish {target_idx} will share damage next time")
             if self.used_active_count < 3:
                 dmg = int(self.atk * 0.35)
                 for f in game.other_team_of(self).living_fish():
+                    idx = game.other_team_of(self).fish.index(f)
                     f.take_damage(dmg, self, direct=True, game=game)
+                public.append(f"Fish {actor_idx} used AoE, dealing {dmg} to all enemy fish")
         self.used_active_count += 1
         self.after_direct_attack(None, game, used_normal=False)
+        if public:
+            return f"Fish {actor_idx} used active: " + ", ".join(public)
+        return f"Fish {actor_idx} used active skill (no visible effect)."
 
 
 class MimicFish(Fish):
@@ -359,8 +448,8 @@ class MimicFish(Fish):
         if hasattr(template, 'shields') and template.shields != 0:
             self.shields = template.shields
 
-    def active(self, game: Any, actor_idx: int) -> None:  # pragma: no cover - replaced
-        pass
+    def active(self, game: Any, actor_idx: int) -> str:
+        return f"Fish {actor_idx} used Mimic active (see copied fish)."
 
 
 # Mapping helper ----------------------------------------------------------------

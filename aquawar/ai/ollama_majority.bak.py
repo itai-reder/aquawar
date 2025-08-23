@@ -6,13 +6,13 @@ OllamaVoter and MajorityPlayer classes for Aquawar majority voting logic.
 """
 
 
-from .ollama_player import BasePlayer
+from .ollama_player import OllamaPlayer
 from pathlib import Path
 from typing import List, Dict, Any
 
 from copy import deepcopy
 
-class OllamaVoter(BasePlayer):
+class OllamaVoter(OllamaPlayer):
     """
     OllamaVoter: Like OllamaPlayer, but:
     - Only one attempt per move (no retries)
