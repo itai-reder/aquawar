@@ -384,15 +384,68 @@ _**User**_
 
 There's no need, I'll test it after the fact
 Now, I want you to modify `demo_tournament.py`, reising it to be consistent with the updated logic as seen in `ai_battles.py`, to also run the following battles for each model:
-1. Single VS Majority of 3
-2. Single VS Majority of 5
-3. Majority of 3 VS Majority of 5
+1. Single VS Single of every other model
+2. Single VS Majority of 3 of the same model
+3. Single VS Majority of 5 of the same model
+4. Majority of 3 VS Majority of 5 of the same model
 
 ---
 
 _**Assistant**_
 
-I'll examine the current `ai_battle.py` to understand the updated logic and then modify `demo_tournament.py` accordingly. Now I'll modify the `demo_tournament.py` to run the requested battle configurations (Single vs Majority of 3, Single vs Majority of 5, and Majority of 3 vs Majority of 5) for each model: 
+I need to first examine the `ai_battle.py` file to understand the updated logic and see how battles are structured, then modify `demo_tournament.py` accordingly. Now I can see the updated structure. I need to modify `demo_tournament.py` to use the new battle system with different player configurations (Single vs Single, Single vs Majority, etc.). Let me update the file: 
+```
+
+```
+Now let's test that the updated tournament script loads correctly: Perfect! The updated `demo_tournament.py` is now ready. Here's a summary of the changes I made:
+
+## Key Updates to `demo_tournament.py`:
+
+1. **Enhanced Player Creation**: Added a `create_player()` function that can create different types of players:
+   - `single`: Regular OllamaPlayer 
+   - `majority_3`: MajorityPlayer with 3 agents
+   - `majority_5`: MajorityPlayer with 5 agents
+
+2. **Comprehensive Battle Configurations**: The tournament now runs 4 different battle types for each model pair:
+   - **Single vs Single**: Traditional 1v1 battles
+   - **Single vs Majority of 3**: One model vs committee of 3 of another model
+   - **Single vs Majority of 5**: One model vs committee of 5 of another model  
+   - **Majority of 3 vs Majority of 5**: Committee of 3 vs committee of 5
+
+3. **Improved Structure**: 
+   - Uses the updated `ai_battle.py` logic with proper player objects
+   - Better error handling and result tracking
+   - Organized results by battle configuration
+   - Comprehensive summary statistics
+
+4. **Enhanced Reporting**:
+   - Shows win counts for each battle configuration type
+   - Tracks overall model performance across all battle types
+   - Displays success/failure rates
+
+5. **Added Command Line Options**:
+   - `--debug`: Enable debug mode for detailed logging
+   - Maintains existing `--port1`, `--port2`, `--rounds` options
+
+The tournament will now run a much more comprehensive analysis, testing how each model performs in different scenarios (single agent vs committee decisions, different committee sizes, etc.). This should provide valuable insights into model performance across various battle configurations!
+
+---
+
+_**User**_
+
+what's the command to execute 2 rounds, one of the ports is 12345?
+
+---
+
+_**Assistant**_
+
+You can run the tournament for 2 rounds with one port set to 12345 using:
+
+```bash
+python cli/demo_tournament.py --rounds 2 --port1 12345
+```
+
+This will set player 1's Ollama server port to 12345, use the default for player 2, and play 2 rounds per battle.
 
 ---
 

@@ -16,111 +16,134 @@ from aquawar.ai.ollama_player import OllamaGameManager, OllamaPlayer
 from aquawar.ai.ollama_majority import MajorityPlayer
 import argparse
 
-def run_battle_configuration(model1, model2, config_type, port1=11434, port2=11434, rounds=1):
-    """Run a specific battle configuration between two models.
-    
-    Args:
-        model1: Model name for player 1
-        model2: Model name for player 2
-        config_type: Type of battle configuration
-        port1: Ollama server port for player 1
-        port2: Ollama server port for player 2
-        rounds: Number of rounds to play
-    """
-    print(f"\n=== {config_type}: {model1} vs {model2} ===")
-    
-    # Create players based on configuration type
-    if config_type == "Single vs Majority(3)":
-        player1 = OllamaPlayer(f"{model1}_single", model=model1, debug=False)
-        player2 = MajorityPlayer(f"{model2}_M3", model=model2, debug=False, num_agents=3)
-    elif config_type == "Single vs Majority(5)": 
-        player1 = OllamaPlayer(f"{model1}_single", model=model1, debug=False)
-        player2 = MajorityPlayer(f"{model2}_M5", model=model2, debug=False, num_agents=5)
-    elif config_type == "Majority(3) vs Majority(5)":
-        player1 = MajorityPlayer(f"{model1}_M3", model=model1, debug=False, num_agents=3)
-        player2 = MajorityPlayer(f"{model2}_M5", model=model2, debug=False, num_agents=5)
+def create_player(name: str, model: str, player_type: str, debug: bool = False):
+    """Create a player based on type (single, majority_3, majority_5)."""
+    if player_type == "single":
+        return OllamaPlayer(name, model=model, debug=debug)
+    elif player_type == "majority_3":
+        return MajorityPlayer(name, model=model, debug=debug, num_agents=3)
+    elif player_type == "majority_5":
+        return MajorityPlayer(name, model=model, debug=debug, num_agents=5)
     else:
-        raise ValueError(f"Unknown configuration type: {config_type}")
+        raise ValueError(f"Unknown player type: {player_type}")
+
+def run_battle_configuration(model1: str, model2: str, config1: str, config2: str, 
+                           port1: int, port2: int, rounds: int, debug: bool = False):
+    """Run a specific battle configuration between two models."""
+    config_name = f"{config1}_vs_{config2}"
+    player1_name = f"{model1}_{config1}"
+    player2_name = f"{model2}_{config2}"
+    
+    print(f"\n=== {player1_name} vs {player2_name} ===")
+    
+    # Create players
+    player1 = create_player(player1_name, model1, config1, debug)
+    player2 = create_player(player2_name, model2, config2, debug)
     
     # Create game manager
-    gm = OllamaGameManager(save_dir="demo_tournament_saves", model=model1, debug=False, max_tries=3)
+    gm = OllamaGameManager(save_dir="demo_tournament_saves", model=model1, debug=debug, max_tries=3)
     
-    # Run the game
     result = run_single_game(
         gm,
         player1,
-        player2, 
+        player2,
         max_turns=200,
         verbose=True,
         rounds=rounds
     )
     
-    return {"player1": model1, "player2": model2, "config": config_type, "result": result}
+    return {
+        "player1": player1_name,
+        "player2": player2_name,
+        "config1": config1,
+        "config2": config2,
+        "model1": model1,
+        "model2": model2,
+        "result": result
+    }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run a demo tournament between models with different configurations.")
+    parser = argparse.ArgumentParser(description="Run a comprehensive demo tournament between models.")
     parser.add_argument("--port1", type=int, default=11434, help="Ollama server port for player 1")
     parser.add_argument("--port2", type=int, default=11434, help="Ollama server port for player 2")
     parser.add_argument("--rounds", type=int, default=1, help="Number of rounds to play")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
-    
-    # Battle configurations to test
-    configurations = [
-        "Single vs Majority(3)",
-        "Single vs Majority(5)", 
-        "Majority(3) vs Majority(5)"
-    ]
     
     results = []
     
-    # Run battles for each configuration and model pair
-    for config in configurations:
-        print(f"\n{'='*60}")
-        print(f"RUNNING CONFIGURATION: {config}")
-        print(f"{'='*60}")
+    # Battle configurations to run
+    battle_configs = [
+        ("single", "single"),      # Single vs Single
+        ("single", "majority_3"),  # Single vs Majority of 3
+        ("single", "majority_5"),  # Single vs Majority of 5  
+        ("majority_3", "majority_5") # Majority of 3 vs Majority of 5
+    ]
+    
+    print("🏆 Starting comprehensive tournament with all battle configurations...")
+    print(f"🤖 Models: {', '.join(MODELS)}")
+    print(f"⚔️ Battle types: {', '.join([f'{c1} vs {c2}' for c1, c2 in battle_configs])}")
+    print(f"🎯 Rounds per battle: {args.rounds}")
+    
+    for config1, config2 in battle_configs:
+        print(f"\n" + "="*80)
+        print(f"🔥 BATTLE CONFIGURATION: {config1.upper()} vs {config2.upper()}")
+        print("="*80)
+        
+        config_results = []
         
         for m1 in MODELS:
             for m2 in MODELS:
                 if m1 == m2:
-                    continue
+                    continue  # Skip same model battles
                     
                 try:
                     result = run_battle_configuration(
-                        m1, m2, config, 
-                        port1=args.port1, 
-                        port2=args.port2, 
-                        rounds=args.rounds
+                        m1, m2, config1, config2, 
+                        args.port1, args.port2, args.rounds, args.debug
                     )
+                    config_results.append(result)
                     results.append(result)
                     print(f"Result: {result['result']}\n")
                 except Exception as e:
-                    print(f"❌ Error in {config} {m1} vs {m2}: {e}")
-                    results.append({
-                        "player1": m1, 
-                        "player2": m2, 
-                        "config": config, 
-                        "result": {"success": False, "error": str(e)}
-                    })
-    
-    # Print summary
-    print(f"\n{'='*60}")
-    print("TOURNAMENT SUMMARY")
-    print(f"{'='*60}")
-    
-    for config in configurations:
-        config_results = [r for r in results if r["config"] == config]
-        successful = [r for r in config_results if r["result"].get("success", False)]
+                    print(f"❌ Error in battle {m1}({config1}) vs {m2}({config2}): {e}\n")
         
-        print(f"\n{config}:")
-        print(f"  Total battles: {len(config_results)}")
-        print(f"  Successful: {len(successful)}")
-        print(f"  Failed: {len(config_results) - len(successful)}")
+        # # Print summary for this configuration
+        # print(f"\n📊 SUMMARY for {config1.upper()} vs {config2.upper()}:")
+        # successful_battles = [r for r in config_results if r['result'].get('success', False)]
+        # print(f"✅ Successful battles: {len(successful_battles)}/{len(config_results)}")
         
-        if successful:
-            print("  Sample results:")
-            for result in successful[:3]:  # Show first 3 successful results
-                winner_idx = result["result"].get("winner")
-                if winner_idx is not None:
-                    winner = result["player1"] if winner_idx == 0 else result["player2"]
-                    turns = result["result"].get("turns", "unknown")
-                    print(f"    {result['player1']} vs {result['player2']}: Winner {winner} ({turns} turns)")
+        # if successful_battles:
+        #     # Count wins by model
+        #     model_wins = {}
+        #     for battle in successful_battles:
+        #         winner_idx = battle['result']['winner'] 
+        #         winner_model = battle['model1'] if winner_idx == 0 else battle['model2']
+        #         model_wins[winner_model] = model_wins.get(winner_model, 0) + 1
+            
+        #     print("🏆 Win counts by model:")
+        #     for model, wins in sorted(model_wins.items(), key=lambda x: x[1], reverse=True):
+        #         print(f"  {model}: {wins} wins")
+    
+    # Final overall summary
+    print(f"\n" + "="*80)
+    print("🏆 FINAL TOURNAMENT SUMMARY")
+    print("="*80)
+    print(f"📊 Total battles: {len(results)}")
+    successful_battles = [r for r in results if r['result'].get('success', False)]
+    print(f"✅ Successful battles: {len(successful_battles)}")
+    print(f"❌ Failed battles: {len(results) - len(successful_battles)}")
+    
+    if successful_battles:
+        # Overall model performance
+        overall_wins = {}
+        for battle in successful_battles:
+            winner_idx = battle['result']['winner']
+            winner_model = battle['model1'] if winner_idx == 0 else battle['model2']
+            overall_wins[winner_model] = overall_wins.get(winner_model, 0) + 1
+        
+        print("\n🏆 Overall model performance:")
+        for model, wins in sorted(overall_wins.items(), key=lambda x: x[1], reverse=True):
+            print(f"  {model}: {wins} total wins")
+    
+    print("\n✅ Tournament completed!")
