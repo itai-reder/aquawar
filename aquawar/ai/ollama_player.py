@@ -2158,7 +2158,8 @@ class OllamaGameManager:
 
                         # Success - merge contexts and document
                         turn_context.update(context)
-                        turn_context["success"] = True
+                        valid = context.get("success", False)
+                        # turn_context["success"] = valid
                         turn_context["result"] = result
                         
                         # Document successful attempt with correct attempt number
@@ -2171,7 +2172,7 @@ class OllamaGameManager:
                                 "context": context,
                                 "turn_context": turn_context
                             },  # response dict
-                            True,  # valid = True for successful attempts
+                            valid,  # valid = True for successful attempts
                             f"Turn {game.state.game_turn}: {current_phase.capitalize()} - {result}",  # move_description
                             # attempt=attempt+1,
                             attempt=attempt,

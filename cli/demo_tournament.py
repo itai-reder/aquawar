@@ -1,10 +1,15 @@
-
+# MODELS = [
+#     "qwq:32b",
+#     "gpt-oss:20b", 
+#     "qwen3:14b",
+#     "mistral-nemo:12b",
+#     "llama3.1:8b"
+# ]
 MODELS = [
-    "qwq:32b",
-    "gpt-oss:20b", 
-    "qwen3:14b",
+    "llama3.1:8b",
     "mistral-nemo:12b",
-    "llama3.1:8b"
+    "qwen3:14b",
+    "gpt-oss:20b", 
 ]
 
 import sys
@@ -16,14 +21,20 @@ from aquawar.ai.ollama_player import OllamaGameManager, OllamaPlayer
 from aquawar.ai.ollama_majority import MajorityPlayer
 import argparse
 
-def create_player(name: str, model: str, player_type: str, debug: bool = False):
+def create_player(name: str, model: str, player_type: str, opponent_type: str, debug: bool = False,
+                  port: int = 11434):
     """Create a player based on type (single, majority_3, majority_5)."""
+    host = f"http://localhost:{port}"
     if player_type == "single":
-        return OllamaPlayer(name, model=model, debug=debug)
+        max_tries = 3
+        if opponent_type.startswith("majority"):
+            # If opponent is majority, use the same max_tries
+            max_tries = int(opponent_type.split("_")[1])
+        return OllamaPlayer(name, model=model, debug=debug, max_tries=max_tries, host=host)
     elif player_type == "majority_3":
-        return MajorityPlayer(name, model=model, debug=debug, num_agents=3)
+        return MajorityPlayer(name, model=model, debug=debug, max_tries=3, host=host)
     elif player_type == "majority_5":
-        return MajorityPlayer(name, model=model, debug=debug, num_agents=5)
+        return MajorityPlayer(name, model=model, debug=debug, max_tries=5, host=host)
     else:
         raise ValueError(f"Unknown player type: {player_type}")
 
@@ -37,11 +48,11 @@ def run_battle_configuration(model1: str, model2: str, config1: str, config2: st
     print(f"\n=== {player1_name} vs {player2_name} ===")
     
     # Create players
-    player1 = create_player(player1_name, model1, config1, debug)
-    player2 = create_player(player2_name, model2, config2, debug)
-    
+    player1 = create_player(player1_name, model1, config1, config2, debug, port1)
+    player2 = create_player(player2_name, model2, config2, config1, debug, port2)
+
     # Create game manager
-    gm = OllamaGameManager(save_dir="demo_tournament_saves", model=model1, debug=debug, max_tries=3)
+    gm = OllamaGameManager(save_dir="tourney_saves", model=model1, debug=debug, max_tries=3)
     
     result = run_single_game(
         gm,
@@ -94,7 +105,7 @@ if __name__ == "__main__":
         
         for m1 in MODELS:
             for m2 in MODELS:
-                if m1 == m2:
+                if m1 == m2 and config1 == config2:
                     continue  # Skip same model battles
                     
                 try:

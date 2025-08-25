@@ -102,8 +102,8 @@ class MajorityPlayer(BasePlayer):
         Context can include details of the vote for debugging.
         """
         pass
-    
-    def __init__(self, name: str, model: str = "llama3.2:3b", max_tries: int = 3, temperature: float = 0.7, top_p: float = 0.9, debug: bool = False, **kwargs):
+
+    def __init__(self, name: str, model: str = "llama3.2:3b", max_tries: int = 3, temperature: float = 0.7, top_p: float = 0.9, debug: bool = False, host: str = "http://localhost:11434", **kwargs):
         super().__init__(name)
         self.model = model
         self.max_tries = max_tries
@@ -116,11 +116,11 @@ class MajorityPlayer(BasePlayer):
         self.player_index = None
         self.pickle_prefix = "turn"
         # Create voter agents
-        self.voters = [OllamaVoter(self, i, name=f"{name} Voter {i+1}", model=model, temperature=temperature, top_p=top_p, debug=debug) for i in range(self.max_tries)]
+        self.voters = [OllamaVoter(self, i, name=f"{name} Voter {i+1}", model=model, temperature=temperature, top_p=top_p, debug=debug, host=host) for i in range(self.max_tries)]
         for voter in self.voters:
             voter.ends_turn = False  # Ensure voters never increment the turn
         # Pseudo-player for making majority moves
-        self.pseudo_player= OllamaPlayer(name=f"{name} (Majority {self.max_tries})", model=model, temperature=temperature, top_p=top_p, debug=debug)
+        self.pseudo_player= OllamaPlayer(name=f"{name} (Majority {self.max_tries})", model=model, temperature=temperature, top_p=top_p, debug=debug, host=host)
         # Optionally accept additional kwargs for compatibility
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -144,7 +144,7 @@ class MajorityPlayer(BasePlayer):
     @property
     def player_string(self) -> str:
         # Use a unique string for directory naming
-        return f"{self.model.replace(' ', '_').lower()}_M{self.max_tries}"
+        return f"{self.model.replace(':', '_').lower()}_M{self.max_tries}"
 
     def get_player_info(self) -> Dict[str, Any]:
         """Get player information for saving."""

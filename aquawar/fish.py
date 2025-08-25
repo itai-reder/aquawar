@@ -107,7 +107,7 @@ class Fish:
                     if shared:
                         split = (original_amount - amount) // len(shared)
                         for mate in shared:
-                            mate.take_damage(split, source, direct=direct, game=game)
+                            mate.take_damage(split, source, direct=False, game=game)
                 self.buffs.remove(buff)
 
         # Damage application
@@ -177,7 +177,7 @@ class Fish:
 class Archerfish(Fish):
     def after_teammate_attacked(self, mate: Fish, source: Fish, game: Any) -> None:
         if mate.hp > 0 and mate.hp < 120:
-            source.take_damage(30, self, direct=True, game=game)
+            source.take_damage(30, self, direct=False, game=game)
 
     def active(self, game: Any, actor_idx: int) -> str:
         my_team = game.team_of(self)
@@ -202,7 +202,7 @@ class Archerfish(Fish):
 class Pufferfish(Fish):
     def after_teammate_attacked(self, mate: Fish, source: Fish, game: Any) -> None:
         if mate.hp > 0 and mate.hp < 120:
-            source.take_damage(30, self, direct=True, game=game)
+            source.take_damage(30, self, direct=False, game=game)
 
     def active(self, game: Any, actor_idx: int) -> str:
         my_team = game.team_of(self)
@@ -217,10 +217,10 @@ class Pufferfish(Fish):
                 target_idx = my_team.fish.index(target)
             except Exception:
                 target_idx = -1
-            actual = target.take_damage(50, self, direct=True, game=game)
+            actual = target.take_damage(50, self, direct=False, game=game)
             self.atk += 70
             self.after_direct_attack(None, game, used_normal=False)
-            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took 50 damage, fish {actor_idx_val} gained 70 ATK."
+            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took {actual} damage, fish {actor_idx_val} gained 70 ATK."
         return f"Fish {actor_idx_val} used active skill (no visible effect)."
 
 
@@ -241,7 +241,7 @@ class ElectricEel(Fish):
                 share = int(amount * 0.3)
                 split = share // len(mates)
                 for m in mates:
-                    m.take_damage(split, source, direct=True, game=game)
+                    m.take_damage(split, source, direct=False, game=game)
                 amount = amount - share
         return super().take_damage(amount, source, direct=direct, game=game)
 
@@ -254,7 +254,7 @@ class ElectricEel(Fish):
         dmg = int(self.atk * 0.35)
         for f in game.other_team_of(self).living_fish():
             f.take_damage(dmg, self, direct=True, game=game)
-        self.after_direct_attack(None, game, used_normal=False)
+        # self.after_direct_attack(None, game, used_normal=False)
         return f"Fish {actor_idx_val} used AoE, dealing {dmg} to all enemy fish."
 
 
@@ -272,11 +272,11 @@ class Sunfish(ElectricEel):
                 target_idx = my_team.fish.index(target)
             except Exception:
                 target_idx = -1
-            actual = target.take_damage(50, self, direct=True, game=game)
+            actual = target.take_damage(50, self, direct=False, game=game)
             self.atk += 70
-            self.after_direct_attack(None, game, used_normal=False)
-            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took 50 damage, fish {actor_idx_val} gained 70 ATK."
-        self.after_direct_attack(None, game, used_normal=False)
+            # self.after_direct_attack(None, game, used_normal=False)
+            return f"Fish {actor_idx_val} used active: teammate fish {target_idx} took {actual} damage, fish {actor_idx_val} gained 70 ATK."
+        # self.after_direct_attack(None, game, used_normal=False)
         return f"Fish {actor_idx_val} used active skill (no visible effect)."
 
 
@@ -340,7 +340,6 @@ class SeaTurtle(Fish):
                     actual = enemy.take_damage(dmg, self, direct=True, game=game)
                     public.append(f"attacked enemy fish {enemy_idx} for {actual} damage")
         self.used_active_count += 1
-        self.after_direct_attack(None, game, used_normal=False)
         if public:
             return f"Fish {actor_idx} used active: " + ", ".join(public)
         return f"Fish {actor_idx} used active skill (no visible effect)."
@@ -395,7 +394,7 @@ class HammerheadShark(GreatWhiteShark):
         before = self.hp
         result = super().take_damage(amount, source, direct=direct, game=game)
         if direct and self.hp <= 0 and source is not None:
-            source.take_damage(40, self, direct=True, game=game)
+            source.take_damage(40, self, direct=False, game=game)
         return result
 
     def active(self, game: Any, actor_idx: int) -> str:
@@ -405,7 +404,7 @@ class HammerheadShark(GreatWhiteShark):
 class Clownfish(Fish):
     def after_direct_damage(self, amount: int, source: Optional[Fish], game: Any) -> None:
         if self.hp < 120 and source is not None:
-            source.take_damage(30, self, direct=True, game=game)
+            source.take_damage(30, self, direct=False, game=game)
 
     def active(self, game: Any, actor_idx: int) -> str:
         mates = game.team_of(self).living_fish()
