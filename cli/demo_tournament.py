@@ -137,24 +137,24 @@ if __name__ == "__main__":
         #         print(f"  {model}: {wins} wins")
     
     # Final overall summary
-    print(f"\n" + "="*80)
-    print("🏆 FINAL TOURNAMENT SUMMARY")
-    print("="*80)
-    print(f"📊 Total battles: {len(results)}")
-    successful_battles = [r for r in results if r['result'].get('success', False)]
-    print(f"✅ Successful battles: {len(successful_battles)}")
-    print(f"❌ Failed battles: {len(results) - len(successful_battles)}")
+    # print(f"\n" + "="*80)
+    # print("🏆 FINAL TOURNAMENT SUMMARY")
+    # print("="*80)
+    # print(f"📊 Total battles: {len(results)}")
+    # successful_battles = [r for r in results if r['result'].get('success', False)]
+    # print(f"✅ Successful battles: {len(successful_battles)}")
+    # print(f"❌ Failed battles: {len(results) - len(successful_battles)}")
     
-    if successful_battles:
-        # Overall model performance
-        overall_wins = {}
-        for battle in successful_battles:
-            winner_idx = battle['result']['winner']
-            winner_model = battle['model1'] if winner_idx == 0 else battle['model2']
-            overall_wins[winner_model] = overall_wins.get(winner_model, 0) + 1
+    # if successful_battles:
+    #     # Overall model performance
+    #     overall_wins = {}
+    #     for battle in successful_battles:
+    #         winner_idx = battle['result']['winner']
+    #         winner_model = battle['model1'] if winner_idx == 0 else battle['model2']
+    #         overall_wins[winner_model] = overall_wins.get(winner_model, 0) + 1
         
-        print("\n🏆 Overall model performance:")
-        for model, wins in sorted(overall_wins.items(), key=lambda x: x[1], reverse=True):
-            print(f"  {model}: {wins} total wins")
+    #     print("\n🏆 Overall model performance:")
+    #     for model, wins in sorted(overall_wins.items(), key=lambda x: x[1], reverse=True):
+    #         print(f"  {model}: {wins} total wins")
     
     print("\n✅ Tournament completed!")

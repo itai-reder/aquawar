@@ -1905,8 +1905,8 @@ class OllamaGameManager:
                 if status["error"]:
                     results["error"] = status["error"]
                     results["success"] = False
-                    break
-                if not status["needs_execution"]:
+                    # break
+                if not (status["needs_execution"] or status["status"] == "error"):
                     results["rounds_skipped"] += 1
                     results["round_results"].append({
                         "round": round_num,
@@ -1938,8 +1938,8 @@ class OllamaGameManager:
                 status = self.check_round_status(player1_string, player2_string, round_num)
                 if status["error"]:
                     results["error"] = status["error"]
-                    break
-                if not status["needs_execution"]:
+                    # break
+                if not (status["needs_execution"] or status["status"] == "error"):
                     results["rounds_skipped"] += 1
                     results["round_results"].append({
                         "round": round_num,
@@ -1970,6 +1970,7 @@ class OllamaGameManager:
         player1.set_game_manager(self, player2)
         player2.set_game_manager(self, player1)
         game_dir = self.persistent_manager.get_game_dir(player1.player_string, player2.player_string, round_num)
+        print(f"[GAME DIR] {game_dir}")
         if game_dir.exists():
             import shutil
             shutil.rmtree(game_dir)
